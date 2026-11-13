@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>HS2CameraSweep</AssemblyName>
+    <RootNamespace>HS2CameraSweep</RootNamespace>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <DebugType>embedded</DebugType>
+    <Version>0.1.0</Version>
+
+    <!--
+      Optional: point this at your HS2 install and the built DLL is copied into
+      BepInEx\plugins\HS2CameraSweep\ after every build.
+        dotnet build -c Release -p:HS2Dir="D:\Games\HoneySelect2"
+      Or set it once here.
+    -->
+    <HS2Dir></HS2Dir>
+  </PropertyGroup>
+
+  <!-- Game + framework references come from NuGet; no local HS2_Data\Managed path needed. -->
+  <ItemGroup>
+    <PackageReference Include="BepInEx.Analyzers" Version="1.0.8" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="UnityEngine.Modules" Version="2018.4.30" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="IllusionLibs.HoneySelect2.Assembly-CSharp" Version="2020.5.29.5" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="IllusionLibs.HoneySelect2.UnityEngine.UI" Version="2018.4.11.4" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="IllusionLibs.HoneySelect2.Cinemachine" Version="2018.4.11.4" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="IllusionLibs.BepInEx.Harmony" Version="2.9.0" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="IllusionModdingAPI.HS2API" Version="1.46.1" PrivateAssets="all" IncludeAssets="compile" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+  <Target Name="DeployToHS2" AfterTargets="Build" Condition="'$(HS2Dir)' != ''">
+    <MakeDir Directories="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll to $(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
+  </Target>
+
+</Project>
