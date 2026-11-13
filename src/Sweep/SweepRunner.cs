@@ -41,11 +41,12 @@ namespace HS2CameraSweep.Sweep
         }
 
         /// <summary>Preview of how many images a run would produce with the current settings.</summary>
-        public int CountCameras()
+        /// <summary>Every camera the current source settings find, on or off (for the window's toggle list).</summary>
+        public List<CameraShot> ListCameras()
         {
             var studio = Studio.Studio.Instance;
-            if (studio == null) return 0;
-            return CameraShotCollector.Collect(studio, _plugin.Source.Value, _plugin.SkipUnsetSlots.Value).Count;
+            if (studio == null) return new List<CameraShot>();
+            return CameraShotCollector.Collect(studio, _plugin.Source.Value, _plugin.SkipUnsetSlots.Value);
         }
 
         public IEnumerator Run()
@@ -53,11 +54,12 @@ namespace HS2CameraSweep.Sweep
             var studio = Studio.Studio.Instance;
             if (studio == null || IsRunning) yield break;
 
-            var shots = CameraShotCollector.Collect(studio, _plugin.Source.Value, _plugin.SkipUnsetSlots.Value);
+            var shots = CameraShotCollector.Collect(studio, _plugin.Source.Value, _plugin.SkipUnsetSlots.Value)
+                .Where(SweepSelection.IsOn).ToList();
             if (shots.Count == 0)
             {
                 CameraSweepPlugin.Logger.LogMessage(
-                    "Camera Sweep: no cameras to shoot. Save a numbered camera slot or add a camera object first.");
+                    "Camera Sweep: no cameras to shoot. Save a camera slot or add a camera object, and make sure at least one is ticked.");
                 yield break;
             }
 
@@ -81,6 +83,9 @@ namespace HS2CameraSweep.Sweep
 
             IsRunning = true;
             _cancelRequested = false;
+            var startTime = Time.realtimeSinceStartup;
+            Estimate.RenderSize(_plugin, out var renderW, out var renderH, out var renderUp);
+            var transparentRun = _plugin.Transparent.Value;
             Done = 0;
             var originalSelection = studio.treeNodeCtrl.selectNode;
 
@@ -109,10 +114,15 @@ namespace HS2CameraSweep.Sweep
             var combos = axes.Aggregate(1, (n, a) => n * a.Value.Count);
             Total = combos * shots.Count;
 
-            var runFolder = Path.Combine(FileNames.ResolveFromGameRoot(_plugin.OutputFolder.Value),
-                DateTime.Now.ToString("yyyyMMdd-HHmmss"));
+            var started = DateTime.Now;
+            var outputRoot = FileNames.ResolveFromGameRoot(_plugin.OutputFolder.Value);
+            var folderPerRun = _plugin.FolderPerRun.Value;
+            var runFolder = folderPerRun ? Path.Combine(outputRoot, started.ToString("yyyyMMdd-HHmmss")) : outputRoot;
             LastFolder = runFolder;
             var prefix = FileNames.Sanitize(_plugin.FilePrefix.Value);
+            var template = _plugin.NameTemplateText.Value;
+            var unique = new NameTemplate.Uniquifier();
+            var shotNumber = 0;
 
             CameraSweepPlugin.Logger.LogMessage(video
                 ? $"Camera Sweep: {Total} video(s) of {CharName(videoTarget)}, {_plugin.VideoCycles.Value:0.##} cycle(s) each - {shots.Count} camera(s) x {combos} variation(s)."
@@ -133,6 +143,9 @@ namespace HS2CameraSweep.Sweep
                         if (applied[a] == index[a]) continue;
                         yield return axes[a].Key.Apply(axes[a].Value[index[a]]);
                         applied[a] = index[a];
+
+                        // A new outer value (e.g. a new outfit) can reset what inner axes set, so re-apply them.
+                        for (var b = a + 1; b < axes.Count; b++) applied[b] = -1;
                     }
 
                     var comboLabel = string.Join("_",
@@ -148,8 +161,18 @@ namespace HS2CameraSweep.Sweep
                         for (var f = 0; f < _plugin.SettleFrames.Value; f++)
                             yield return null;
 
-                        var name = string.Join("_", new[] { prefix, comboLabel, shot.Label }
-                            .Where(s => !string.IsNullOrEmpty(s)).ToArray());
+                        shotNumber++;
+                        // {character}: the swapped-in character when swapping, else the first ticked one.
+                        var character = (axes.Any(kv => kv.Key is CharacterSwapAxis) ? SweepSelection.SwapTarget : null)
+                                        ?? SweepSelection.Targets().FirstOrDefault() ?? SweepSelection.SwapTarget;
+                        var tokens = NameTemplate.Values(prefix, shot.Label, shotNumber, Total, started,
+                            character == null ? "" : CharName(character),
+                            axes.Select((kv, a) => new KeyValuePair<string, string>(kv.Key.Name, kv.Value[index[a]].Label)));
+                        var name = unique.Make(NameTemplate.Build(template, tokens));
+                        // Writing straight into the output folder: never overwrite an earlier run's file.
+                        if (!folderPerRun)
+                            while (File.Exists(Path.Combine(runFolder, name + (video ? ".mp4" : _writer.Extension))))
+                                name = unique.Make(name);
                         if (video)
                             yield return VideoExportBridge.Record(videoTarget, _plugin.VideoCycles.Value, _plugin.VideoPrewarm.Value,
                                 Path.Combine(runFolder, name), () => _cancelRequested);
@@ -179,7 +202,9 @@ namespace HS2CameraSweep.Sweep
                     catch (Exception ex) { CameraSweepPlugin.Logger.LogDebug("Could not restore selection: " + ex.Message); }
                 }
 
-                for (var i = prepared.Count - 1; i >= 0; i--)
+                // Outer axes first: putting the original outfit back can reset clothing state, so the clothes
+                // axis restores after it.
+                for (var i = 0; i < prepared.Count; i++)
                 {
                     try { prepared[i].Restore(); }
                     catch (Exception ex) { CameraSweepPlugin.Logger.LogWarning($"Axis '{prepared[i].Name}' restore failed: {ex.Message}"); }
@@ -190,6 +215,9 @@ namespace HS2CameraSweep.Sweep
                 CameraSweepPlugin.Logger.LogMessage(_cancelRequested
                     ? $"Camera Sweep cancelled after {Done} of {Total} shots. Saved to {runFolder}"
                     : $"Camera Sweep done: {Done} shot(s) saved to {runFolder}");
+
+                Estimate.Record(_plugin, runFolder, started, Done, Time.realtimeSinceStartup - startTime, video, transparentRun,
+                    renderW, renderH, renderUp, _plugin.VideoCycles.Value, _plugin.VideoPrewarm.Value);
 
                 Current = "";
                 IsRunning = false;

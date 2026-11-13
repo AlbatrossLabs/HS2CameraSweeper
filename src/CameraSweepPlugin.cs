@@ -34,7 +34,7 @@ namespace HS2CameraSweep
     {
         public const string Guid = "com.albatrosslabs.hs2.camerasweep";
         public const string PluginName = "Camera Sweep";
-        public const string Version = "0.2.0";
+        public const string Version = "0.6.0";
 
         internal static new ManualLogSource Logger;
         internal static CameraSweepPlugin Instance;
@@ -54,11 +54,21 @@ namespace HS2CameraSweep
         internal ConfigEntry<int> Height;
         internal ConfigEntry<int> Upsampling;
         internal ConfigEntry<bool> Transparent;
+        internal ConfigEntry<string> NameTemplateText;
+        internal ConfigEntry<bool> FolderPerRun;
 
         // Video
         internal ConfigEntry<OutputMode> Mode;
         internal ConfigEntry<float> VideoCycles;
         internal ConfigEntry<int> VideoPrewarm;
+
+        // Measured by each sweep; used by the window's size/time estimate.
+        internal ConfigEntry<float> StatBytesPerPixel;
+        internal ConfigEntry<float> StatBytesPerPixelAlpha;
+        internal ConfigEntry<float> StatSecondsPerShot;
+        internal ConfigEntry<float> StatWorkMegapixels;
+        internal ConfigEntry<float> StatVideoBytesPerCycle;
+        internal ConfigEntry<float> StatVideoSecondsPerCycle;
 
         /// <summary>Character whose animation drives video length. Null = use the selection when the sweep starts.</summary>
         internal Studio.OCIChar VideoTarget;
@@ -107,11 +117,35 @@ namespace HS2CameraSweep
                 new ConfigDescription("Loops to play before recording starts, so physics settles and the video starts exactly on a loop boundary.",
                     new AcceptableValueRange<int>(0, 20)));
 
+            const string stats = "Stats (measured)";
+            const string statsNote = "Filled in automatically after each sweep and used for the size/time estimate in the window. 0 = not measured yet.";
+            StatBytesPerPixel = Config.Bind(stats, "PNG bytes per pixel", 0f, statsNote);
+            StatBytesPerPixelAlpha = Config.Bind(stats, "PNG bytes per pixel (transparent)", 0f, statsNote);
+            StatSecondsPerShot = Config.Bind(stats, "Seconds per image", 0f, statsNote);
+            StatWorkMegapixels = Config.Bind(stats, "Rendered megapixels per image", 0f, statsNote + " (resolution × upsampling², for scaling the time)");
+            StatVideoBytesPerCycle = Config.Bind(stats, "Video bytes per cycle", 0f, statsNote);
+            StatVideoSecondsPerCycle = Config.Bind(stats, "Video seconds per cycle", 0f, statsNote);
+
+            NameTemplateText = Config.Bind("Output", "File name template", NameTemplate.Default,
+                "Tokens: {prefix} {scene} {camera} {n} {date} {time} {character} {axes} {swap} {outfit} {clothes} {face} {extras}. " +
+                "A token for a variation that's off is left out. Use / for subfolders, e.g. {scene}/{character}_{outfit}_{face}_{camera}");
+            FolderPerRun = Config.Bind("Output", "Folder per run", true,
+                "Put each run in its own date-time folder inside the output folder. Off = straight into the output folder (existing files are never overwritten).");
+
             // Variation axes. Order here = nesting order (first axis is the outermost loop).
             // Cameras are always the innermost loop, so each outfit/expression is set once and then
             // every camera is shot before moving on.
+            Axes.Add(new CharacterSwapAxis(Config));
             Axes.Add(new OutfitAxis(Config));
+            Axes.Add(new ClothesStateAxis(Config));
             Axes.Add(new ExpressionAxis(Config));
+            Axes.Add(new FaceExtrasAxis(Config));
+
+            // Per-scene camera on/off and character choices are saved inside the scene file.
+            KKAPI.Studio.SaveLoad.StudioSaveLoadApi.RegisterExtraBehaviour<SweepSceneController>(Guid);
+
+            // Remembers the scene file name for the {scene} token.
+            HarmonyLib.Harmony.CreateAndPatchAll(typeof(SceneName), Guid);
 
             Runner = new SweepRunner(this);
             _window = new SweepWindow(this);

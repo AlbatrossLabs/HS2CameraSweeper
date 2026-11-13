@@ -14,7 +14,7 @@ namespace HS2CameraSweep.Axes
 {
     /// <summary>
     /// Loads each coordinate (outfit) card from a folder onto the target characters.
-    /// Targets = the selected characters in the workspace, or every character if none are selected.
+    /// Targets = the characters ticked under Characters in the window.
     /// </summary>
     internal sealed class OutfitAxis : IVariationAxis
     {
@@ -34,6 +34,47 @@ namespace HS2CameraSweep.Axes
 
         public string Name => "outfit";
 
+        private int _countCache;
+        private float _countTime = -10f;
+
+        public string PreviewLabel
+        {
+            get
+            {
+                try
+                {
+                    var folder = FileNames.ResolveFromUserData(_folder.Value);
+                    if (!Directory.Exists(folder)) return null;
+                    var first = Directory.GetFiles(folder, "*.png").OrderBy(p => p, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
+                    return first == null ? null : FileNames.Sanitize(Path.GetFileNameWithoutExtension(first));
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>Coordinate cards in the folder (re-counted at most once a second).</summary>
+        public int Count
+        {
+            get
+            {
+                if (Time.realtimeSinceStartup - _countTime < 1f) return _countCache;
+                _countTime = Time.realtimeSinceStartup;
+                try
+                {
+                    var folder = FileNames.ResolveFromUserData(_folder.Value);
+                    _countCache = Directory.Exists(folder) ? Directory.GetFiles(folder, "*.png").Length : 0;
+                }
+                catch
+                {
+                    _countCache = 0;
+                }
+                return _countCache;
+            }
+        }
+
         public bool Enabled
         {
             get => _enabled.Value;
@@ -51,13 +92,11 @@ namespace HS2CameraSweep.Axes
                 return new List<AxisValue>();
             }
 
-            _targets = (StudioAPI.GetSelectedCharacters() ?? Enumerable.Empty<OCIChar>()).Where(c => c != null).ToList();
-            if (_targets.Count == 0)
-                _targets = Studio.Studio.Instance.dicObjectCtrl.Values.OfType<OCIChar>().ToList();
+            _targets = SweepSelection.Targets();
 
             if (_targets.Count == 0)
             {
-                CameraSweepPlugin.Logger.LogMessage("Outfit axis: no characters in the scene.");
+                CameraSweepPlugin.Logger.LogMessage("Outfit axis: no characters ticked under Characters.");
                 return new List<AxisValue>();
             }
 
@@ -134,7 +173,9 @@ namespace HS2CameraSweep.Axes
             GUILayout.Label("Folder", GUILayout.Width(50));
             _folder.Value = GUILayout.TextField(_folder.Value);
             GUILayout.EndHorizontal();
-            GUILayout.Label("Applies to selected characters (or all if none selected).");
+            GUILayout.Label(Count == 0
+                ? "No coordinate cards (.png) found in that folder."
+                : $"{Count} outfit card(s). Changes the characters ticked under Characters.");
         }
 
         private sealed class Snapshot

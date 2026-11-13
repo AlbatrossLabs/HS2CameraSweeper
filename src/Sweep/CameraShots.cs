@@ -28,6 +28,8 @@ namespace HS2CameraSweep.Sweep
             _data = data;
         }
 
+        public int Index => _index;
+
         public override string Label => $"slot{_index + 1:00}";
 
         public override void Apply(Studio.Studio studio)
@@ -50,6 +52,8 @@ namespace HS2CameraSweep.Sweep
             var name = string.IsNullOrEmpty(camera.name) ? ordinal.ToString("00") : FileNames.Sanitize(camera.name);
             _label = "cam_" + name;
         }
+
+        public OCICamera Camera => _camera;
 
         public override string Label => _label;
 

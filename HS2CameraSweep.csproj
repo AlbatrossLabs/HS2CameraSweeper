@@ -16,7 +16,7 @@
         dotnet build -c Release -p:HS2Dir="D:\Games\HoneySelect2"
       Or set it once here.
     -->
-    <HS2Dir></HS2Dir>
+    <HS2Dir>X:\HS2 RX15</HS2Dir>
   </PropertyGroup>
 
   <!-- Game + framework references come from NuGet; no local HS2_Data\Managed path needed. -->

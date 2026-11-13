@@ -20,6 +20,12 @@ namespace HS2CameraSweep.Axes
         /// <summary>Whether the user turned this axis on.</summary>
         bool Enabled { get; set; }
 
+        /// <summary>How many values a run would cycle through right now (for the window's estimate). Must be cheap.</summary>
+        int Count { get; }
+
+        /// <summary>Label of the first value, for the file-name preview in the window. Null if none.</summary>
+        string PreviewLabel { get; }
+
         /// <summary>
         /// Called at the start of a run. Remember the scene's current state so Restore() can put it back,
         /// and build the list of values. Return an empty list to skip the axis for this run.

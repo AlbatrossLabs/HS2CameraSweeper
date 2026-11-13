@@ -128,6 +128,30 @@ namespace HS2CameraSweep.Capture
             }
         }
 
+        /// <summary>The render size and upsampling Screencap is set to (what a capture with 0/0/0 would use).</summary>
+        public static void GetRenderSettings(out int width, out int height, out int upsampling)
+        {
+            Resolve();
+            switch (_kind)
+            {
+                case ApiKind.Modern:
+                    width = ReadInt("ResolutionX", Screen.width);
+                    height = ReadInt("ResolutionY", Screen.height);
+                    upsampling = ReadInt("DownscalingRate", 1);
+                    break;
+                case ApiKind.Legacy:
+                    width = ReadInt("CaptureWidth", Screen.width);
+                    height = ReadInt("CaptureHeight", Screen.height);
+                    upsampling = ReadInt("Downscaling", 1);
+                    break;
+                default:
+                    width = Screen.width;
+                    height = Screen.height;
+                    upsampling = 1;
+                    break;
+            }
+        }
+
         private static void Resolve()
         {
             if (_resolved) return;
