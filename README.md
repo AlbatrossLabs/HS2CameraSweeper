@@ -32,6 +32,7 @@ VideoExport locks the game clock to the video framerate while recording, so moti
 
 Variations work in video mode too: e.g. 3 cameras x 2 outfits = 6 videos.
 
+<img width="1127" height="635" alt="image" src="https://github.com/user-attachments/assets/05ac5251-609f-423a-8617-b196bcef82c4" />
 
 
 Loop order: outfit → expression → cameras. Each outfit is loaded once, then every expression, then every camera.
