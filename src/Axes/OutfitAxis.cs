@@ -2,78 +2,47 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using AIChara;
-using BepInEx.Configuration;
-using HS2CameraSweep.Sweep;
-using KKAPI.Studio;
+using BepInEx;
+using HarmonyLib;
 using Studio;
 using UnityEngine;
 
 namespace HS2CameraSweep.Axes
 {
     /// <summary>
-    /// Loads each coordinate (outfit) card from a folder onto the target characters.
-    /// Targets = the characters ticked under Characters in the window.
+    /// Loads each picked coordinate (outfit) card onto this character, the same way Studio's Costume list
+    /// does (OCIChar.LoadClothesFile), so plugin data saved with the outfit (overlays, extra accessories...)
+    /// comes along. The outfit the character wore when the sweep began is saved to a temporary coordinate
+    /// card first and loaded back afterwards. Optionally the outfit they're wearing now is shot too, first:
+    /// that's the scene's outfit, or after a character swap, the swapped-in card's own outfit.
     /// </summary>
     internal sealed class OutfitAxis : IVariationAxis
     {
-        private readonly ConfigEntry<bool> _enabled;
-        private readonly ConfigEntry<string> _folder;
+        public const string OriginalLabel = "original";
 
-        private readonly List<Snapshot> _snapshots = new List<Snapshot>();
-        private List<OCIChar> _targets = new List<OCIChar>();
+        private readonly OCIChar _target;
+        private readonly Setting<bool> _enabled;
+        private readonly Setting<bool> _includeOriginal;
+        private readonly CardList _cards;
 
-        public OutfitAxis(ConfigFile config)
+        private string _backupPath;
+        private byte[] _backupBytes;     // fallback if the coordinate couldn't be saved to a file
+        private Version _backupVersion;
+        private int _changedAt = -1;     // character reload count when an outfit was last loaded; -1 = none since
+        private bool _everChanged;       // an outfit was loaded at some point this run
+
+        public OutfitAxis(OCIChar target, AxisStore store)
         {
-            _enabled = config.Bind("Axis: Outfit", "Enabled", false,
-                "Re-shoot every camera once per coordinate card in the folder below.");
-            _folder = config.Bind("Axis: Outfit", "Coordinate folder", "coordinate/female/CameraSweep",
-                "Folder of coordinate cards (.png). Absolute, or relative to UserData. Use cards made for the target character's sex.");
+            _target = target;
+            _enabled = store.Bool("enabled", false);
+            _includeOriginal = store.Bool("includeOriginal", false);
+            _cards = new CardList(CharacterSwapAxis.CardEntries(store), "outfits", "*.png", PickKind.Outfit, target);
         }
 
         public string Name => "outfit";
-
-        private int _countCache;
-        private float _countTime = -10f;
-
-        public string PreviewLabel
-        {
-            get
-            {
-                try
-                {
-                    var folder = FileNames.ResolveFromUserData(_folder.Value);
-                    if (!Directory.Exists(folder)) return null;
-                    var first = Directory.GetFiles(folder, "*.png").OrderBy(p => p, StringComparer.OrdinalIgnoreCase).FirstOrDefault();
-                    return first == null ? null : FileNames.Sanitize(Path.GetFileNameWithoutExtension(first));
-                }
-                catch
-                {
-                    return null;
-                }
-            }
-        }
-
-        /// <summary>Coordinate cards in the folder (re-counted at most once a second).</summary>
-        public int Count
-        {
-            get
-            {
-                if (Time.realtimeSinceStartup - _countTime < 1f) return _countCache;
-                _countTime = Time.realtimeSinceStartup;
-                try
-                {
-                    var folder = FileNames.ResolveFromUserData(_folder.Value);
-                    _countCache = Directory.Exists(folder) ? Directory.GetFiles(folder, "*.png").Length : 0;
-                }
-                catch
-                {
-                    _countCache = 0;
-                }
-                return _countCache;
-            }
-        }
+        public string DisplayName => "Outfits";
+        public string Description => "Each outfit (coordinate card) you pick";
 
         public bool Enabled
         {
@@ -81,115 +50,194 @@ namespace HS2CameraSweep.Axes
             set => _enabled.Value = value;
         }
 
+        public int Count
+        {
+            get
+            {
+                var n = _cards.Count;
+                return n == 0 ? 0 : n + (_includeOriginal.Value ? 1 : 0);
+            }
+        }
+
+        public string PreviewLabel
+        {
+            get
+            {
+                if (_cards.Count == 0) return null;
+                return _includeOriginal.Value ? OriginalLabel : CardList.Labels(_cards.Files())[0];
+            }
+        }
+
         public IList<AxisValue> Prepare()
         {
-            _snapshots.Clear();
+            var values = new List<AxisValue>();
+            _changedAt = -1;
+            _everChanged = false;
+            _backupPath = null;
+            _backupBytes = null;
 
-            var folder = FileNames.ResolveFromUserData(_folder.Value);
-            if (!Directory.Exists(folder))
+            var cha = _target?.charInfo;
+            if (cha?.nowCoordinate == null)
             {
-                CameraSweepPlugin.Logger.LogMessage($"Outfit axis: folder not found: {folder}");
-                return new List<AxisValue>();
+                CameraSweepPlugin.Logger.LogMessage("Outfits: character isn't loaded.");
+                return values;
             }
 
-            _targets = SweepSelection.Targets();
-
-            if (_targets.Count == 0)
+            var files = _cards.Files();
+            if (files.Count == 0)
             {
-                CameraSweepPlugin.Logger.LogMessage("Outfit axis: no characters ticked under Characters.");
-                return new List<AxisValue>();
+                CameraSweepPlugin.Logger.LogMessage("Outfits: no outfits picked.");
+                return values;
             }
 
-            foreach (var oci in _targets)
+            // Keep the current outfit so it can be put back (as a card, so plugin data comes back too).
+            try
             {
-                var cha = oci.charInfo;
-                if (cha == null || cha.nowCoordinate == null) continue;
-                _snapshots.Add(new Snapshot(cha, cha.nowCoordinate.SaveBytes(), cha.nowCoordinate.loadVersion));
+                var dir = Path.Combine(Paths.CachePath, "CameraSweep");
+                Directory.CreateDirectory(dir);
+                _backupPath = Path.Combine(dir, "outfit_original_" + DateTime.Now.Ticks + ".png");
+                CoordinateSaver.Save(cha, _backupPath);
+                // Only trust the card if it reads back.
+                if (!File.Exists(_backupPath) || !new ChaFileCoordinate().LoadFile(_backupPath)) _backupPath = null;
+            }
+            catch (Exception ex)
+            {
+                CameraSweepPlugin.Logger.LogDebug("Outfits: could not save the original outfit as a card: " + ex.Message);
+                _backupPath = null;
             }
 
-            return Directory.GetFiles(folder, "*.png")
-                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-                .Select(p => new AxisValue(FileNames.Sanitize(Path.GetFileNameWithoutExtension(p)), p))
-                .ToList();
+            if (_backupPath == null)
+            {
+                _backupBytes = cha.nowCoordinate.SaveBytes();
+                _backupVersion = cha.nowCoordinate.loadVersion;
+            }
+
+            if (_includeOriginal.Value) values.Add(new AxisValue(OriginalLabel, null));
+            var labels = CardList.Labels(files);
+            for (var i = 0; i < files.Count; i++) values.Add(new AxisValue(labels[i], files[i]));
+            return values;
         }
 
         public IEnumerator Apply(AxisValue value)
         {
             var path = (string)value.Payload;
-            var coord = new ChaFileCoordinate();
-
-            bool loaded;
-            try
+            if (path == null)
             {
-                using (var fs = File.OpenRead(path))
-                    loaded = coord.LoadFile(fs, 0);
+                // "Wearing now": nothing to do if no outfit was loaded since the character was (re)loaded -
+                // after a swap that's the new card's own outfit, which is what they're wearing.
+                if (_changedAt != CharacterReloads.Of(_target)) yield break;
+                PutBackOriginal();
+                _changedAt = -1;
             }
-            catch (Exception ex)
+            else
             {
-                CameraSweepPlugin.Logger.LogWarning($"Outfit axis: could not read {path}: {ex.Message}");
-                loaded = false;
-            }
-
-            if (!loaded)
-            {
-                CameraSweepPlugin.Logger.LogWarning($"Outfit axis: skipped {path} (not a readable coordinate card).");
-                yield break;
-            }
-
-            foreach (var oci in _targets)
-            {
-                try { oci.charInfo?.ChangeNowCoordinate(coord, true); }
-                catch (Exception ex) { CameraSweepPlugin.Logger.LogWarning("Outfit axis: ChangeNowCoordinate failed: " + ex.Message); }
+                try
+                {
+                    _target.LoadClothesFile(path);
+                    _changedAt = CharacterReloads.Of(_target);
+                    _everChanged = true;
+                }
+                catch (Exception ex)
+                {
+                    CameraSweepPlugin.Logger.LogWarning($"Outfits: could not load {Path.GetFileName(path)}: {ex.Message}");
+                }
             }
 
-            // Reload rebuilds clothing meshes; give it a frame before the runner's settle frames.
+            // Loading rebuilds clothing meshes; give it a frame before the runner's settle frames.
             yield return null;
         }
 
         public void Restore()
         {
-            foreach (var s in _snapshots)
+            if (_everChanged) PutBackOriginal();
+
+            try { if (_backupPath != null && File.Exists(_backupPath)) File.Delete(_backupPath); }
+            catch { /* left in BepInEx\cache\CameraSweep; harmless */ }
+
+            _backupPath = null;
+            _backupBytes = null;
+            _changedAt = -1;
+            _everChanged = false;
+        }
+
+        private void PutBackOriginal()
+        {
+            try
             {
-                try
+                if (_backupPath != null && File.Exists(_backupPath))
                 {
-                    if (s.Character == null) continue;
-                    var coord = new ChaFileCoordinate();
-                    if (coord.LoadBytes(s.Bytes, s.Version))
-                        s.Character.ChangeNowCoordinate(coord, true);
+                    _target.LoadClothesFile(_backupPath);
                 }
-                catch (Exception ex)
+                else if (_backupBytes != null)
                 {
-                    CameraSweepPlugin.Logger.LogWarning("Outfit axis: restore failed: " + ex.Message);
+                    var coord = new ChaFileCoordinate();
+                    if (coord.LoadBytes(_backupBytes, _backupVersion))
+                        _target.charInfo.ChangeNowCoordinate(coord, true);
                 }
             }
-
-            _snapshots.Clear();
-            _targets.Clear();
+            catch (Exception ex)
+            {
+                CameraSweepPlugin.Logger.LogWarning("Outfits: putting the original outfit back failed: " + ex.Message);
+            }
         }
 
         public void DrawSettings()
         {
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Folder", GUILayout.Width(50));
-            _folder.Value = GUILayout.TextField(_folder.Value);
-            GUILayout.EndHorizontal();
-            GUILayout.Label(Count == 0
-                ? "No coordinate cards (.png) found in that folder."
-                : $"{Count} outfit card(s). Changes the characters ticked under Characters.");
+            _cards.Draw();
+            _includeOriginal.Value = GUILayout.Toggle(_includeOriginal.Value, " Also shoot the outfit they're wearing now");
+        }
+    }
+
+    /// <summary>
+    /// Saves a character's current outfit as a coordinate card with every plugin's data in it.
+    /// KKAPI only lets its plugins (overlays, etc.) write their part of a coordinate card inside the
+    /// character maker: in Studio it logs an error and leaves their data out, and loading such a card back
+    /// would clear those plugins' settings. While we save, we tell KKAPI which character the card is for.
+    /// </summary>
+    internal static class CoordinateSaver
+    {
+        private static ChaControl _saving;
+        private static bool _kkapiAsked;
+        private static System.Reflection.MethodInfo _kkapiSave;
+
+        public static void Install(Harmony harmony)
+        {
+            // Backup in case the patch below doesn't take (e.g. the method got inlined): call KKAPI's own
+            // save handler for our character straight from the save event.
+            _kkapiSave = AccessTools.Method(typeof(KKAPI.Chara.CharacterApi), "OnCoordinateBeingSaved",
+                new[] { typeof(ChaControl), typeof(ChaFileCoordinate) });
+            ExtensibleSaveFormat.ExtendedSave.CoordinateBeingSaved += OnCoordinateBeingSaved;
+
+            var target = AccessTools.Method(typeof(KKAPI.Maker.MakerAPI), nameof(KKAPI.Maker.MakerAPI.GetCharacterControl));
+            if (target == null)
+            {
+                CameraSweepPlugin.Logger.LogWarning("Outfits: KKAPI's MakerAPI.GetCharacterControl not found - plugin data may be missing from the saved original outfit.");
+                return;
+            }
+            harmony.Patch(target, prefix: new HarmonyMethod(typeof(CoordinateSaver), nameof(GetCharacterControlPrefix)));
         }
 
-        private sealed class Snapshot
+        public static void Save(ChaControl cha, string path)
         {
-            public Snapshot(ChaControl character, byte[] bytes, Version version)
-            {
-                Character = character;
-                Bytes = bytes;
-                Version = version;
-            }
+            _saving = cha;
+            _kkapiAsked = false;
+            try { cha.nowCoordinate.SaveFile(path, 0); }
+            finally { _saving = null; }
+        }
 
-            public ChaControl Character { get; }
-            public byte[] Bytes { get; }
-            public Version Version { get; }
+        private static bool GetCharacterControlPrefix(ref ChaControl __result)
+        {
+            if (_saving == null) return true;
+            _kkapiAsked = true;
+            __result = _saving;
+            return false;
+        }
+
+        private static void OnCoordinateBeingSaved(ChaFileCoordinate file)
+        {
+            if (_saving == null || _kkapiAsked || _kkapiSave == null || file != _saving.nowCoordinate) return;
+            try { _kkapiSave.Invoke(null, new object[] { _saving, file }); }
+            catch (Exception ex) { CameraSweepPlugin.Logger.LogDebug("Outfits: KKAPI coordinate save: " + (ex.InnerException ?? ex).Message); }
         }
     }
 }

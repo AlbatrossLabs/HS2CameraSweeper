@@ -10,11 +10,9 @@ using Studio;
 namespace HS2CameraSweep.Sweep
 {
     /// <summary>
-    /// Which cameras are switched on for the sweep, and which characters the variations change.
-    /// Both are per scene: saved inside the scene file and restored when it loads.
-    ///
-    /// Defaults: every camera on. Women are changed by outfit/face variations, men are not,
-    /// until you tick or untick someone.
+    /// Per-scene choices: which cameras are switched on, and which characters are in the sweep with
+    /// which variations (CharacterPlan). Saved inside the scene file and restored when it loads.
+    /// Defaults: every camera on, no characters added.
     /// </summary>
     internal static class SweepSelection
     {
@@ -22,20 +20,7 @@ namespace HS2CameraSweep.Sweep
 
         private static readonly HashSet<int> SlotsOff = new HashSet<int>();
         private static readonly HashSet<ObjectCtrlInfo> CamerasOff = new HashSet<ObjectCtrlInfo>();
-        private static readonly Dictionary<ObjectCtrlInfo, bool> CharacterChoice = new Dictionary<ObjectCtrlInfo, bool>();
-        private static ObjectCtrlInfo _swapTarget;
-
-        /// <summary>The character the swap variation replaces. Defaults to the first woman in the scene.</summary>
-        public static OCIChar SwapTarget
-        {
-            get
-            {
-                var all = AllCharacters();
-                if (_swapTarget is OCIChar c && all.Contains(c)) return c;
-                return all.FirstOrDefault(IsFemale) ?? all.FirstOrDefault();
-            }
-            set => _swapTarget = value;
-        }
+        private static readonly List<CharacterPlan> PlanList = new List<CharacterPlan>();
 
         // ---------------------------------------------------------------- cameras
 
@@ -79,22 +64,42 @@ namespace HS2CameraSweep.Sweep
 
         public static bool IsFemale(OCIChar c)
         {
-            try { return c.sex == FemaleSex; }
+            try { return c == null || c.sex == FemaleSex; }
             catch { return true; }
         }
 
-        public static bool IsTarget(OCIChar c) =>
-            CharacterChoice.TryGetValue(c, out var on) ? on : IsFemale(c);
-
-        public static void SetTarget(OCIChar c, bool on) => CharacterChoice[c] = on;
-
-        /// <summary>Characters that outfit and face variations will change.</summary>
-        public static List<OCIChar> Targets() => AllCharacters().Where(IsTarget).ToList();
-
-        public static void SetAllTargets(Func<OCIChar, bool> rule)
+        /// <summary>Characters added to the sweep that are still in the scene, in the order added.</summary>
+        public static List<CharacterPlan> Plans()
         {
-            foreach (var c in AllCharacters()) CharacterChoice[c] = rule(c);
+            var alive = new HashSet<OCIChar>(AllCharacters());
+            PlanList.RemoveAll(p => p.Character == null || !alive.Contains(p.Character));
+            return PlanList.ToList();
         }
+
+        public static bool IsAdded(OCIChar c) => PlanList.Any(p => p.Character == c);
+
+        /// <summary>
+        /// Make this the only selected item in the workspace. Studio's SelectSingle toggles: called on an
+        /// item that is already selected it deselects it, so only call it when needed, and without toggling.
+        /// </summary>
+        public static void SelectOnly(TreeNodeObject node)
+        {
+            var ctrl = Studio.Studio.Instance?.treeNodeCtrl;
+            if (ctrl == null || node == null) return;
+            if (ctrl.selectNode == node && ctrl.CheckSelect(node)) return;
+            ctrl.SelectSingle(node, false);
+        }
+
+        public static CharacterPlan Add(OCIChar c)
+        {
+            var existing = PlanList.FirstOrDefault(p => p.Character == c);
+            if (existing != null) return existing;
+            var plan = new CharacterPlan(c);
+            PlanList.Add(plan);
+            return plan;
+        }
+
+        public static void Remove(CharacterPlan plan) => PlanList.Remove(plan);
 
         // ---------------------------------------------------------------- scene save / load
 
@@ -102,28 +107,23 @@ namespace HS2CameraSweep.Sweep
         {
             SlotsOff.Clear();
             CamerasOff.Clear();
-            CharacterChoice.Clear();
-            _swapTarget = null;
+            PlanList.Clear();
         }
 
         public static PluginData Save()
         {
             var alive = new HashSet<ObjectCtrlInfo>(Studio.Studio.Instance.dicObjectCtrl.Values);
             CamerasOff.RemoveWhere(o => !alive.Contains(o));
-            foreach (var dead in CharacterChoice.Keys.Where(o => !alive.Contains(o)).ToList())
-                CharacterChoice.Remove(dead);
+            var plans = Plans();
 
-            if (_swapTarget != null && !alive.Contains(_swapTarget)) _swapTarget = null;
-
-            if (SlotsOff.Count == 0 && CamerasOff.Count == 0 && CharacterChoice.Count == 0 && _swapTarget == null)
+            if (SlotsOff.Count == 0 && CamerasOff.Count == 0 && plans.Count == 0)
                 return null;
 
-            var data = new PluginData { version = 1 };
+            CameraSweepPlugin.Logger.LogInfo($"Scene choices saved: {SlotsOff.Count} saved view(s) off, {CamerasOff.Count} camera object(s) off, {plans.Count} character(s).");
+            var data = new PluginData { version = 2 };
             data.data["slotsOff"] = SlotsOff.ToArray();
             data.data["camsOff"] = CamerasOff.Select(Key).ToArray();
-            data.data["charsOn"] = CharacterChoice.Where(kv => kv.Value).Select(kv => Key(kv.Key)).ToArray();
-            data.data["charsOff"] = CharacterChoice.Where(kv => !kv.Value).Select(kv => Key(kv.Key)).ToArray();
-            if (_swapTarget != null) data.data["swapTarget"] = new[] { Key(_swapTarget) };
+            data.data["plans"] = plans.Select(SerializePlan).ToArray();
             return data;
         }
 
@@ -138,16 +138,51 @@ namespace HS2CameraSweep.Sweep
             // Objects are saved by their id at save time; loadedItems maps those ids to the new objects.
             foreach (var key in Ints(data.data, "camsOff"))
                 if (loaded.TryGetValue(key, out var o) && o != null) CamerasOff.Add(o);
-            foreach (var key in Ints(data.data, "charsOn"))
-                if (loaded.TryGetValue(key, out var o) && o != null) CharacterChoice[o] = true;
-            foreach (var key in Ints(data.data, "charsOff"))
-                if (loaded.TryGetValue(key, out var o) && o != null) CharacterChoice[o] = false;
-            if (operation == SceneOperationKind.Load)
-                foreach (var key in Ints(data.data, "swapTarget"))
-                    if (loaded.TryGetValue(key, out var o) && o != null) _swapTarget = o;
+
+            foreach (var text in Strings(data.data, "plans"))
+            {
+                if (!DeserializePlan(text, out var key, out var stores)) continue;
+                if (!loaded.TryGetValue(key, out var o) || !(o is OCIChar c) || IsAdded(c)) continue;
+                PlanList.Add(new CharacterPlan(c, stores) { Expanded = false });
+            }
+
+            CameraSweepPlugin.Logger.LogInfo($"Scene choices loaded ({operation}): {SlotsOff.Count} saved view(s) off, " +
+                                             $"{CamerasOff.Count} camera object(s) off, {PlanList.Count} character(s) added.");
         }
 
         private static int Key(ObjectCtrlInfo o) => o.objectInfo.dicKey;
+
+        // A plan is saved as  "dicKey|kind.field=value&kind.field=value"  with values URL-escaped.
+        private static string SerializePlan(CharacterPlan p)
+        {
+            var fields = p.Stores.SelectMany(kv => kv.Value.Values.Select(f =>
+                Uri.EscapeDataString(kv.Key + "." + f.Key) + "=" + Uri.EscapeDataString(f.Value ?? "")));
+            return Key(p.Character) + "|" + string.Join("&", fields.ToArray());
+        }
+
+        private static bool DeserializePlan(string text, out int key, out Dictionary<string, Dictionary<string, string>> stores)
+        {
+            stores = new Dictionary<string, Dictionary<string, string>>();
+            key = -1;
+            if (string.IsNullOrEmpty(text)) return false;
+
+            var bar = text.IndexOf('|');
+            if (bar <= 0 || !int.TryParse(text.Substring(0, bar), out key)) return false;
+
+            foreach (var pair in text.Substring(bar + 1).Split(new[] { '&' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var eq = pair.IndexOf('=');
+                if (eq <= 0) continue;
+                var name = Uri.UnescapeDataString(pair.Substring(0, eq));
+                var value = Uri.UnescapeDataString(pair.Substring(eq + 1));
+                var dot = name.IndexOf('.');
+                if (dot <= 0) continue;
+                var kind = name.Substring(0, dot);
+                if (!stores.TryGetValue(kind, out var d)) stores[kind] = d = new Dictionary<string, string>();
+                d[name.Substring(dot + 1)] = value;
+            }
+            return true;
+        }
 
         /// <summary>Saved int arrays can come back as int[], object[] or a list, depending on the serializer.</summary>
         private static IEnumerable<int> Ints(Dictionary<string, object> d, string name)
@@ -161,6 +196,15 @@ namespace HS2CameraSweep.Sweep
                     catch { continue; }
                     yield return n;
                 }
+        }
+
+        private static IEnumerable<string> Strings(Dictionary<string, object> d, string name)
+        {
+            if (!d.TryGetValue(name, out var value) || value == null) yield break;
+            if (value is string one) { yield return one; yield break; }
+            if (value is IEnumerable list)
+                foreach (var item in list)
+                    if (item is string s) yield return s;
         }
     }
 

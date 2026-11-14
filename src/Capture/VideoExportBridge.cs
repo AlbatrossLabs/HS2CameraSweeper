@@ -61,6 +61,23 @@ namespace HS2CameraSweep.Capture
             }
         }
 
+        /// <summary>VideoExport's window (framerate, format, quality, and the progress / ETA while recording).</summary>
+        public static bool WindowOpen
+        {
+            get
+            {
+                if (!Available) return false;
+                try { return _type.GetProperty("ShowUI", BindingFlags.Public | BindingFlags.Static)?.GetValue(null, null) is bool b && b; }
+                catch { return false; }
+            }
+            set
+            {
+                if (!Available) return;
+                try { _type.GetProperty("ShowUI", BindingFlags.Public | BindingFlags.Static)?.SetValue(null, value, null); }
+                catch (Exception ex) { CameraSweepPlugin.Logger.LogDebug("Could not toggle VideoExport's window: " + ex.Message); }
+            }
+        }
+
         public static void Stop()
         {
             if (!Available || _stop == null) return;
@@ -88,8 +105,8 @@ namespace HS2CameraSweep.Capture
             }
 
             // VideoExport picks its animator from the workspace selection in its own Update().
-            var studio = Studio.Studio.Instance;
-            studio.treeNodeCtrl.SelectSingle(target.treeNodeObject);
+            // (SelectOnly: Studio's own select toggles, which deselected every other video's character.)
+            SweepSelection.SelectOnly(target.treeNodeObject);
             yield return null;
             yield return null;
 
@@ -120,6 +137,11 @@ namespace HS2CameraSweep.Capture
             var before = ListVideos(outputFolder);
             var startedAt = DateTime.Now.AddSeconds(-1);
 
+            // VideoExport takes transparency from Screencap's own setting, and an .mp4 can't hold it; keep videos opaque.
+            var savedAlpha = ScreencapBridge.ForceOpaque();
+            // Show VideoExport's window: it has the frame count and ETA for this video.
+            WindowOpen = true;
+
             try
             {
                 SetField(_instance, "_limitDuration", true);
@@ -132,6 +154,7 @@ namespace HS2CameraSweep.Capture
             {
                 CameraSweepPlugin.Logger.LogError("VideoExport RecordVideo failed: " + (ex.InnerException ?? ex));
                 Restore(saved);
+                ScreencapBridge.RestoreAlpha(savedAlpha);
                 yield break;
             }
 
@@ -151,6 +174,7 @@ namespace HS2CameraSweep.Capture
             }
 
             Restore(saved);
+            ScreencapBridge.RestoreAlpha(savedAlpha);
 
             if (!(GetField(_instance, "_autoGenerateVideo") is bool generate) || !generate)
             {

@@ -16,17 +16,27 @@ namespace HS2CameraSweep.Sweep
     /// </summary>
     internal sealed class Estimate
     {
-        // Rough defaults until a run has been measured.
-        private const double GuessBytesPerPixel = 1.6;      // opaque PNG of a 3D render
-        private const double GuessBytesPerPixelAlpha = 2.4; // RGBA PNG
+        // Rough defaults until a run has been measured (bytes per output pixel, opaque / transparent).
+        private static double Guess(ImageFormat f, bool alpha)
+        {
+            switch (f)
+            {
+                case ImageFormat.WebP: return alpha ? 1.5 : 1.1;
+                case ImageFormat.WebPLossy: return alpha ? 0.35 : 0.25;
+                case ImageFormat.Jpg: return 0.45;
+                default: return alpha ? 2.4 : 1.6;
+            }
+        }
         private const double GuessSecondsBase = 0.6;        // settle frames, readback, encode
         private const double GuessSecondsPerMegapixel = 0.08;
 
         public int Cameras;
         public int Combinations;
+        public int Characters;   // characters with at least one variation to cycle
         public int Total;
         public string Breakdown;
         public bool Video;
+        public ImageFormat Format;
 
         public int Width;
         public int Height;
@@ -45,20 +55,17 @@ namespace HS2CameraSweep.Sweep
         {
             var e = new Estimate { Cameras = camerasOn, Video = plugin.Mode.Value == OutputMode.Video };
 
+            // cameras × each character's combinations (every combination across characters).
             var parts = new System.Collections.Generic.List<string> { $"{camerasOn} camera{(camerasOn == 1 ? "" : "s")}" };
             e.Combinations = 1;
-            foreach (var axis in plugin.Axes.Where(a => a.Enabled))
+            var plans = SweepSelection.Plans().Where(p => p.Enabled.Any(a => a.Count > 0)).ToList();
+            foreach (var plan in plans)
             {
-                var n = Math.Max(0, axis.Count);
-                if (n == 0)
-                {
-                    // The runner skips an axis with nothing to cycle, so it doesn't multiply.
-                    parts.Add($"no {axis.Name} (skipped)");
-                    continue;
-                }
+                var n = plan.Combinations;
                 e.Combinations *= n;
-                parts.Add($"{n} {axis.Name}");
+                parts.Add(plans.Count == 1 ? $"{n} variation{(n == 1 ? "" : "s")}" : $"{plan.Name} {n}");
             }
+            e.Characters = plans.Count;
             e.Total = camerasOn * e.Combinations;
             e.Breakdown = string.Join(" × ", parts.ToArray());
 
@@ -77,9 +84,11 @@ namespace HS2CameraSweep.Sweep
             }
             else
             {
-                var alpha = plugin.Transparent.Value && ScreencapBridge.Available;
-                var measuredBpp = alpha ? plugin.StatBytesPerPixelAlpha.Value : plugin.StatBytesPerPixel.Value;
-                var bpp = measuredBpp > 0 ? measuredBpp : alpha ? GuessBytesPerPixelAlpha : GuessBytesPerPixel;
+                var format = plugin.Runner.Format;
+                e.Format = format;
+                var alpha = plugin.Transparent.Value && format != ImageFormat.Jpg;
+                var measuredBpp = MeasuredBpp(plugin, format, alpha);
+                var bpp = measuredBpp > 0 ? measuredBpp : Guess(format, alpha);
                 e.BytesEach = (long)(bpp * e.Width * e.Height);
                 e.SizeMeasured = measuredBpp > 0;
 
@@ -118,7 +127,44 @@ namespace HS2CameraSweep.Sweep
             width = plugin.Width.Value > 0 ? plugin.Width.Value : sw;
             height = plugin.Height.Value > 0 ? plugin.Height.Value : sh;
             upsampling = plugin.Upsampling.Value > 0 ? plugin.Upsampling.Value : Math.Max(1, su);
-            if (!ScreencapBridge.Available) upsampling = 1;
+        }
+
+        // ---------------------------------------------------------------- per-format stats
+
+        private static string Key(ImageFormat f, bool alpha) => f.ToString().ToLowerInvariant() + (alpha ? "+alpha" : "");
+
+        private static double MeasuredBpp(CameraSweepPlugin plugin, ImageFormat f, bool alpha)
+        {
+            if (f == ImageFormat.Png) return alpha ? plugin.StatBytesPerPixelAlpha.Value : plugin.StatBytesPerPixel.Value;
+            return ReadPairs(plugin.StatBytesPerPixelOther.Value).TryGetValue(Key(f, alpha), out var v) ? v : 0;
+        }
+
+        private static void StoreBpp(CameraSweepPlugin plugin, ImageFormat f, bool alpha, float bpp)
+        {
+            if (f == ImageFormat.Png)
+            {
+                if (alpha) plugin.StatBytesPerPixelAlpha.Value = bpp;
+                else plugin.StatBytesPerPixel.Value = bpp;
+                return;
+            }
+
+            var pairs = ReadPairs(plugin.StatBytesPerPixelOther.Value);
+            pairs[Key(f, alpha)] = bpp;
+            plugin.StatBytesPerPixelOther.Value = string.Join(";",
+                pairs.Select(kv => kv.Key + "=" + kv.Value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture)).ToArray());
+        }
+
+        private static System.Collections.Generic.Dictionary<string, double> ReadPairs(string text)
+        {
+            var d = new System.Collections.Generic.Dictionary<string, double>();
+            foreach (var part in (text ?? "").Split(';'))
+            {
+                var kv = part.Split('=');
+                if (kv.Length == 2 && double.TryParse(kv[1], System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out var v) && v > 0)
+                    d[kv[0].Trim()] = v;
+            }
+            return d;
         }
 
         public static double WorkMegapixels(int w, int h, int up) => (double)w * h * up * up / 1e6;
@@ -127,7 +173,7 @@ namespace HS2CameraSweep.Sweep
 
         /// <summary>Called after a sweep: turns what it produced into per-shot numbers for next time.</summary>
         public static void Record(CameraSweepPlugin plugin, string runFolder, DateTime started, int done, double seconds,
-            bool video, bool transparent, int width, int height, int upsampling, float cycles, int prewarm)
+            bool video, ImageFormat format, bool transparent, int width, int height, int upsampling, float cycles, int prewarm)
         {
             if (done <= 0 || seconds <= 0 || !Directory.Exists(runFolder)) return;
 
@@ -138,21 +184,23 @@ namespace HS2CameraSweep.Sweep
                     .Where(f => f.LastWriteTime >= started.AddSeconds(-2)).ToArray();
                 if (video)
                 {
-                    var vids = files.Where(f => f.Extension != ".png").ToArray();
+                    var vids = files.Where(f => f.Extension == ".mp4" || f.Extension == ".webm" || f.Extension == ".gif" || f.Extension == ".avi").ToArray();
+                    if (vids.Length == 0) vids = files.Where(f => f.Extension != ".png" && f.Extension != ".webp" && f.Extension != ".jpg").ToArray();
                     if (vids.Length == 0 || cycles <= 0) return;
                     plugin.StatVideoBytesPerCycle.Value = (float)(vids.Sum(f => f.Length) / (double)vids.Length / cycles);
                     plugin.StatVideoSecondsPerCycle.Value = (float)(seconds / done / (cycles + prewarm));
                 }
                 else
                 {
-                    var pngs = files.Where(f => f.Extension == ".png").ToArray();
-                    if (pngs.Length == 0) return;
+                    var ext = ShotWriter.ExtensionOf(format);
+                    var images = files.Where(f => string.Equals(f.Extension, ext, StringComparison.OrdinalIgnoreCase)).ToArray();
+                    if (images.Length == 0) return;
 
                     // Use the real size of what was written; Screencap may round the resolution.
-                    if (!PngSize(pngs[0].FullName, out var w, out var h)) { w = width; h = height; }
-                    var bpp = (float)(pngs.Sum(f => f.Length) / (double)pngs.Length / ((double)w * h));
-                    if (transparent) plugin.StatBytesPerPixelAlpha.Value = bpp;
-                    else plugin.StatBytesPerPixel.Value = bpp;
+                    int w = width, h = height;
+                    if (format == ImageFormat.Png && !PngSize(images[0].FullName, out w, out h)) { w = width; h = height; }
+                    var bpp = (float)(images.Sum(f => f.Length) / (double)images.Length / ((double)w * h));
+                    StoreBpp(plugin, format, transparent, bpp);
 
                     plugin.StatSecondsPerShot.Value = (float)(seconds / done);
                     plugin.StatWorkMegapixels.Value = (float)WorkMegapixels(w, h, upsampling);

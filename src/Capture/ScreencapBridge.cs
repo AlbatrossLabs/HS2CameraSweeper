@@ -128,6 +128,51 @@ namespace HS2CameraSweep.Capture
             }
         }
 
+        /// <summary>
+        /// Turns Screencap's own transparency setting off (VideoExport reads it for every video frame) and
+        /// returns what it was, for RestoreAlpha. Null if there was nothing to change.
+        /// </summary>
+        public static object ForceOpaque()
+        {
+            Resolve();
+            try
+            {
+                var entry = AlphaEntry();
+                if (entry == null || Convert.ToInt32(entry.BoxedValue) == 0) return null;
+                var previous = entry.BoxedValue;
+                entry.BoxedValue = Enum.ToObject(entry.SettingType, 0); // AlphaMode.None
+                return previous;
+            }
+            catch (Exception ex)
+            {
+                CameraSweepPlugin.Logger.LogDebug("Could not turn Screencap transparency off: " + ex.Message);
+                return null;
+            }
+        }
+
+        public static void RestoreAlpha(object previous)
+        {
+            if (previous == null) return;
+            try
+            {
+                var entry = AlphaEntry();
+                if (entry != null) entry.BoxedValue = previous;
+            }
+            catch (Exception ex)
+            {
+                CameraSweepPlugin.Logger.LogDebug("Could not restore Screencap transparency: " + ex.Message);
+            }
+        }
+
+        private static ConfigEntryBase AlphaEntry()
+        {
+            if (_manager == null) return null;
+            var prop = _manager.GetProperty("CaptureAlphaMode", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance);
+            if (prop == null) return null;
+            var target = prop.GetGetMethod(true).IsStatic ? null : _instance;
+            return prop.GetValue(target, null) as ConfigEntryBase;
+        }
+
         /// <summary>The render size and upsampling Screencap is set to (what a capture with 0/0/0 would use).</summary>
         public static void GetRenderSettings(out int width, out int height, out int upsampling)
         {

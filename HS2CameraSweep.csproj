@@ -8,7 +8,7 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugType>embedded</DebugType>
-    <Version>0.1.0</Version>
+    <Version>0.9.6</Version>
 
     <!--
       Optional: point this at your HS2 install and the built DLL is copied into
@@ -35,6 +35,7 @@
   <Target Name="DeployToHS2" AfterTargets="Build" Condition="'$(HS2Dir)' != ''">
     <MakeDir Directories="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
     <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
+    <Copy SourceFiles="native\libwebp_cs.dll;native\LICENSE-libwebp.txt" DestinationFolder="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" SkipUnchangedFiles="true" />
     <Message Importance="high" Text="Deployed $(AssemblyName).dll to $(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
   </Target>
 

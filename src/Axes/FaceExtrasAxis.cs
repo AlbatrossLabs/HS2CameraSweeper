@@ -19,31 +19,32 @@ namespace HS2CameraSweep.Axes
     /// </summary>
     internal sealed class FaceExtrasAxis : IVariationAxis
     {
-        private const string DefaultPresets = "plain=0,0,-1,-1,-1,-1; blush=1,-1,-1,-1,-1,-1; tears=-1,1,-1,-1,-1,-1";
+        public const string DefaultPresets = "plain=0,0,-1,-1,-1,-1; blush=1,-1,-1,-1,-1,-1; tears=-1,1,-1,-1,-1,-1";
 
         private static readonly string[] Columns = { "Blush", "Tears", "Eyes", "Neck", "EyeOpen", "Mouth" };
         private static readonly bool[] IsFraction = { true, true, false, false, true, true };
         private const float Step = 0.25f;
         private const int MaxLook = 9;
 
-        private readonly ConfigEntry<bool> _enabled;
-        private readonly ConfigEntry<string> _presets;
+        private readonly OCIChar _target;
+        private readonly Setting<bool> _enabled;
+        private readonly Setting<string> _presets;
 
         private List<Preset> _model = new List<Preset>();
         private string _modelSource;
 
         private readonly List<Snapshot> _snapshots = new List<Snapshot>();
 
-        public FaceExtrasAxis(ConfigFile config)
+        public FaceExtrasAxis(OCIChar target, AxisStore store)
         {
-            _enabled = config.Bind("Axis: Face extras", "Enabled", false,
-                "Re-shoot every camera once per face-extras preset below (blush, tears, eye/neck look, eye and mouth opening).");
-            _presets = config.Bind("Axis: Face extras", "Presets", DefaultPresets,
-                "Easiest to edit in the Camera Sweep window. As text: name=blush,tears,eyeLook,neckLook,eyesOpen,mouthOpen; ... " +
-                "Blush, tears, eyesOpen and mouthOpen are 0 to 1. eyeLook and neckLook are the position in Studio's list (first = 0). -1 = leave as is.");
+            _target = target;
+            _enabled = store.Bool("enabled", false);
+            _presets = store.Text("presets", () => AxisDefaults.ExtrasPresets.Value);
         }
 
         public string Name => "extras";
+        public string DisplayName => "Face extras";
+        public string Description => "Blush, tears, eye and head direction, eye/mouth opening";
 
         public bool Enabled
         {
@@ -60,7 +61,7 @@ namespace HS2CameraSweep.Axes
         public IList<AxisValue> Prepare()
         {
             _snapshots.Clear();
-            foreach (var oci in SweepSelection.Targets())
+            foreach (var oci in new[] { _target })
             {
                 if (oci?.charInfo == null) continue;
                 try
@@ -79,7 +80,7 @@ namespace HS2CameraSweep.Axes
             }
 
             if (_snapshots.Count == 0)
-                CameraSweepPlugin.Logger.LogMessage("Face extras: no characters ticked under Characters.");
+                CameraSweepPlugin.Logger.LogMessage("Face extras: character isn't loaded.");
 
             var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var values = new List<AxisValue>();
@@ -136,37 +137,52 @@ namespace HS2CameraSweep.Axes
         {
             var model = Model();
             var changed = false;
-            const float nameW = 70f, stepW = 18f, valW = 30f, delW = 22f;
+            // Six columns don't fit across the window, so each preset takes two lines of three.
+            const float nameW = 70f, stepW = 20f, valW = 26f, delW = 22f, colW = stepW * 2 + valW + 8;
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Shot name", GUILayout.Width(nameW));
-            foreach (var h in Columns) GUILayout.Label(h, GUILayout.Width(stepW * 2 + valW + 4));
-            GUILayout.EndHorizontal();
+            for (var line = 0; line < 2; line++)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(line == 0 ? "Shot name" : "", GUILayout.Width(nameW));
+                for (var k = line * 3; k < line * 3 + 3; k++) GUILayout.Label(Columns[k], GUILayout.Width(colW));
+                GUILayout.EndHorizontal();
+            }
 
             for (var i = 0; i < model.Count; i++)
             {
                 var p = model[i];
-                GUILayout.BeginHorizontal();
+                var delete = false;
 
-                var name = GUILayout.TextField(p.Name, GUILayout.Width(nameW));
-                if (name != p.Name) { p.Name = name; changed = true; }
-
-                for (var k = 0; k < Columns.Length; k++)
+                for (var line = 0; line < 2; line++)
                 {
-                    if (GUILayout.Button("<", GUILayout.Width(stepW))) { p.Values[k] = Down(p.Values[k], k); changed = true; }
-                    GUILayout.Label(Show(p.Values[k], k), GUILayout.Width(valW));
-                    if (GUILayout.Button(">", GUILayout.Width(stepW))) { p.Values[k] = Up(p.Values[k], k); changed = true; }
-                }
+                    GUILayout.BeginHorizontal();
+                    if (line == 0)
+                    {
+                        var name = GUILayout.TextField(p.Name, GUILayout.Width(nameW));
+                        if (name != p.Name) { p.Name = name; changed = true; }
+                    }
+                    else
+                    {
+                        GUILayout.Space(nameW + 4);
+                    }
 
-                if (GUILayout.Button("x", GUILayout.Width(delW)))
-                {
-                    model.RemoveAt(i);
-                    changed = true;
+                    for (var k = line * 3; k < line * 3 + 3; k++)
+                    {
+                        if (GUILayout.Button("<", GUILayout.Width(stepW))) { p.Values[k] = Down(p.Values[k], k); changed = true; }
+                        GUILayout.Label(Show(p.Values[k], k), GUILayout.Width(valW));
+                        if (GUILayout.Button(">", GUILayout.Width(stepW))) { p.Values[k] = Up(p.Values[k], k); changed = true; }
+                        GUILayout.Space(4);
+                    }
+
+                    if (line == 1 && GUILayout.Button("x", GUILayout.Width(delW))) delete = true;
                     GUILayout.EndHorizontal();
-                    break;
                 }
 
-                GUILayout.EndHorizontal();
+                GUILayout.Space(3);
+                if (!delete) continue;
+                model.RemoveAt(i);
+                changed = true;
+                break;
             }
 
             GUILayout.Label("Blush, tears, eye/mouth open: 0-1.  Eyes/Neck look: Studio's list order (first = 0).  - = leave as it was.");
@@ -174,29 +190,33 @@ namespace HS2CameraSweep.Axes
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("+ From current"))
             {
-                var oci = SweepSelection.Targets().FirstOrDefault(c => c?.charInfo != null);
+                var oci = _target?.charInfo != null ? _target : null;
                 if (oci != null)
                 {
                     var st = oci.charInfo.fileStatus;
                     model.Add(new Preset("extras" + (model.Count + 1),
                         new[] { st.hohoAkaRate, st.tearsRate, st.eyesLookPtn, st.neckLookPtn, st.eyesOpenMax, oci.oiCharInfo.mouthOpen }));
-                    changed = true;
+                    Store();
+                    UI.Gui.Relayout();
                 }
                 else
                 {
-                    CameraSweepPlugin.Logger.LogMessage("Camera Sweep: tick a character under Characters first.");
+                    CameraSweepPlugin.Logger.LogMessage("Camera Sweep: this character isn't loaded.");
                 }
             }
             if (GUILayout.Button("+ Add"))
             {
                 model.Add(new Preset("extras" + (model.Count + 1), Enumerable.Repeat(-1f, Columns.Length).ToArray()));
-                changed = true;
+                Store();
+                UI.Gui.Relayout();
             }
-            if (GUILayout.Button("Defaults"))
+            if (GUILayout.Button(new GUIContent("Reset", "Load the default presets (F1 > Axis: Face extras)")))
             {
-                _model = Parse(DefaultPresets);
+                _model = Parse(AxisDefaults.ExtrasPresets.Value);
                 changed = true;
             }
+            if (GUILayout.Button(new GUIContent("Save as default", "Characters you add from now on start with these presets")))
+                AxisDefaults.ExtrasPresets.Value = _presets.Value;
             GUILayout.EndHorizontal();
 
             if (changed) Store();

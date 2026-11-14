@@ -5,6 +5,7 @@ using System.Linq;
 using AIChara;
 using BepInEx.Configuration;
 using HS2CameraSweep.Sweep;
+using Studio;
 using UnityEngine;
 
 namespace HS2CameraSweep.Axes
@@ -23,13 +24,26 @@ namespace HS2CameraSweep.Axes
     internal sealed class ClothesStateAxis : IVariationAxis
     {
         private const sbyte Unchanged = -1;
-        private const string DefaultPresets =
-            "halfTop=top:half; halfBottom=bottom:half; topOff=top:off; bottomOff=bottom:off; topBottomOff=top:off,bottom:off";
+        // Underwear only shows with the clothes over it off, so presets that change the bra / panties take the
+        // top / bottom off too (and Apply does that for any preset that leaves the top / bottom at "-").
+        public const string DefaultPresets =
+            "dressed=top:on,bra:on,bottom:on,panties:on; half=top:off,bra:half,bottom:off,panties:half; " +
+            "topless=top:off,bra:off; bottomless=bottom:off,panties:off; nude=all:off";
+
+        /// <summary>Earlier defaults: replaced by the current ones wherever nobody edited them.</summary>
+        public static readonly string[] OldDefaults =
+        {
+            "halfTop=top:half; halfBottom=bottom:half; topOff=top:off; bottomOff=bottom:off; topBottomOff=top:off,bottom:off",
+            "dressed=top:on,bottom:on,bra:on,panties:on; half=top:half,bottom:half; topless=top:off,bra:off; bottomless=bottom:off,panties:off; nude=all:off",
+            "dressed=top:on,bottom:on,bra:on,panties:on; half=top:half,bottom:half; topless=top:off,bra:off; bottomless=bottom:off,panties:off; nude=top:off,bottom:off,bra:off,panties:off,gloves:off,pantyhose:off,socks:off,shoes:off",
+        };
 
         // Index = HS2 clothes kind.
         private static readonly string[] PartNames = { "top", "bottom", "bra", "panties", "gloves", "pantyhose", "socks", "shoes" };
         private static readonly string[] PartShort = { "Top", "Bottom", "Bra", "Panties", "Gloves", "Hose", "Socks", "Shoes" };
+        private static readonly int[] DisplayOrder = { 0, 2, 1, 3, 4, 5, 6, 7 }; // Top | Bra | Bottom | Panties, then the rest
         private const int MainParts = 4; // shown by default; "All parts" shows the rest
+        private const int Top = 0, Bottom = 1, Bra = 2, Panties = 3;
 
         private static readonly Dictionary<string, int[]> PartAliases = new Dictionary<string, int[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -45,8 +59,11 @@ namespace HS2CameraSweep.Axes
             { "off", 2 }, { "2", 2 },
         };
 
-        private readonly ConfigEntry<bool> _enabled;
-        private readonly ConfigEntry<string> _presets;
+        private readonly OCIChar _target;
+        private readonly Setting<bool> _enabled;
+        private readonly Setting<string> _presets;
+        private readonly Setting<bool> _includeOriginal;
+        public const string OriginalLabel = "original";
 
         private List<Preset> _model = new List<Preset>();
         private string _modelSource;
@@ -55,17 +72,18 @@ namespace HS2CameraSweep.Axes
         private readonly List<KeyValuePair<ChaControl, byte[]>> _snapshots = new List<KeyValuePair<ChaControl, byte[]>>();
         private readonly HashSet<string> _warned = new HashSet<string>();
 
-        public ClothesStateAxis(ConfigFile config)
+        public ClothesStateAxis(OCIChar target, AxisStore store)
         {
-            _enabled = config.Bind("Axis: Clothes state", "Enabled", false,
-                "Re-shoot every camera once per clothing-state preset below.");
-            _presets = config.Bind("Axis: Clothes state", "Presets", DefaultPresets,
-                "Easiest to edit as buttons in the Camera Sweep window. As text: semicolon-separated presets, name=part:state,part:state. " +
-                "Parts: top, bottom, bra, panties, gloves, pantyhose, socks, shoes, all. States: on, half, off. " +
-                "Parts a preset doesn't name stay as they were. Example: topless=top:off,bra:off");
+            _target = target;
+            _enabled = store.Bool("enabled", false);
+            _presets = store.Text("presets", () => AxisDefaults.ClothesPresets.Value);
+            _includeOriginal = store.Bool("includeOriginal", true);
+            if (Array.IndexOf(OldDefaults, _presets.Value) >= 0) _presets.Value = DefaultPresets;
         }
 
         public string Name => "clothes";
+        public string DisplayName => "Clothing states";
+        public string Description => "On / half / off per clothing part";
 
         public bool Enabled
         {
@@ -73,9 +91,16 @@ namespace HS2CameraSweep.Axes
             set => _enabled.Value = value;
         }
 
-        public int Count => Model().Count(p => p.States.Any(s => s != Unchanged));
+        public int Count
+        {
+            get
+            {
+                var n = Model().Count(p => p.States.Any(s => s != Unchanged));
+                return n == 0 ? 0 : n + (_includeOriginal.Value ? 1 : 0);
+            }
+        }
 
-        public string PreviewLabel => UniqueNames(Model().Where(p => p.States.Any(s => s != Unchanged))).Select(kv => kv.Key).FirstOrDefault();
+        public string PreviewLabel => _includeOriginal.Value && Count > 0 ? OriginalLabel : UniqueNames(Model().Where(p => p.States.Any(s => s != Unchanged))).Select(kv => kv.Key).FirstOrDefault();
 
         // ---------------------------------------------------------------- run
 
@@ -84,22 +109,24 @@ namespace HS2CameraSweep.Axes
             _snapshots.Clear();
             _warned.Clear();
 
-            foreach (var oci in SweepSelection.Targets())
+            foreach (var oci in new[] { _target })
             {
-                var cha = oci.charInfo;
+                var cha = oci?.charInfo;
                 var state = cha?.fileStatus?.clothesState;
                 if (state == null) continue;
                 _snapshots.Add(new KeyValuePair<ChaControl, byte[]>(cha, (byte[])state.Clone()));
             }
 
             if (_snapshots.Count == 0)
-                CameraSweepPlugin.Logger.LogMessage("Clothes axis: no characters ticked under Characters.");
+                CameraSweepPlugin.Logger.LogMessage("Clothing states: character has no clothing data.");
 
             var values = UniqueNames(Model().Where(p => p.States.Any(s => s != Unchanged)))
-                .Select(p => new AxisValue(p.Key, p.Value.States.ToArray()))
+                .Select(p => new AxisValue(p.Key, WithOuterOff(p.Value.States)))
                 .ToList();
             if (values.Count == 0)
-                CameraSweepPlugin.Logger.LogMessage("Clothes axis: no presets set - every part is '-'.");
+                CameraSweepPlugin.Logger.LogMessage("Clothing states: no presets set - every part is '-'.");
+            else if (_includeOriginal.Value)
+                values.Insert(0, new AxisValue(OriginalLabel, NewStates())); // all '-' = as dressed when the sweep began
             return values;
         }
 
@@ -113,8 +140,10 @@ namespace HS2CameraSweep.Axes
                 if (cha == null) continue;
                 try
                 {
-                    // Start every preset from the state the sweep began with.
+                    // Start every preset from the state the sweep began with - and redraw it, or parts an
+                    // earlier preset took off would stay off.
                     Array.Copy(snap.Value, cha.fileStatus.clothesState, snap.Value.Length);
+                    cha.UpdateClothesStateAll();
 
                     for (var kind = 0; kind < states.Length; kind++)
                     {
@@ -169,58 +198,91 @@ namespace HS2CameraSweep.Axes
         public void DrawSettings()
         {
             var model = Model();
-            var parts = _showAllParts ? PartNames.Length : MainParts;
+            // Four parts per line; "All parts" adds a second line with the other four.
+            var lines = _showAllParts ? 2 : 1;
             var changed = false;
-            const float nameW = 80f, cellW = 46f, delW = 22f;
+            const float nameW = 80f, cellW = 50f, delW = 22f;
 
-            GUILayout.BeginHorizontal();
-            GUILayout.Label("Shot name", GUILayout.Width(nameW));
-            for (var k = 0; k < parts; k++) GUILayout.Label(PartShort[k], GUILayout.Width(cellW));
-            GUILayout.EndHorizontal();
+            for (var line = 0; line < lines; line++)
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(line == 0 ? "Shot name" : "", GUILayout.Width(nameW));
+                for (var c = line * MainParts; c < line * MainParts + MainParts; c++) GUILayout.Label(PartShort[DisplayOrder[c]], GUILayout.Width(cellW));
+                GUILayout.EndHorizontal();
+            }
 
             for (var i = 0; i < model.Count; i++)
             {
                 var p = model[i];
-                GUILayout.BeginHorizontal();
+                var delete = false;
 
-                var name = GUILayout.TextField(p.Name, GUILayout.Width(nameW));
-                if (name != p.Name) { p.Name = name; changed = true; }
-
-                for (var k = 0; k < parts; k++)
+                for (var line = 0; line < lines; line++)
                 {
-                    if (!GUILayout.Button(StateText(p.States[k]), GUILayout.Width(cellW))) continue;
-                    p.States[k] = Next(p.States[k]);
-                    changed = true;
-                }
+                    GUILayout.BeginHorizontal();
+                    if (line == 0)
+                    {
+                        var name = GUILayout.TextField(p.Name, GUILayout.Width(nameW));
+                        if (name != p.Name) { p.Name = name; changed = true; }
+                    }
+                    else
+                    {
+                        GUILayout.Space(nameW + 4);
+                    }
 
-                if (GUILayout.Button("x", GUILayout.Width(delW)))
-                {
-                    model.RemoveAt(i);
-                    changed = true;
+                    for (var c = line * MainParts; c < line * MainParts + MainParts; c++)
+                    {
+                        var k = DisplayOrder[c];
+                        if (!GUILayout.Button(StateText(p.States[k]), GUILayout.Width(cellW))) continue;
+                        p.States[k] = Next(p.States[k]);
+                        changed = true;
+                    }
+
+                    if (line == lines - 1 && GUILayout.Button("x", GUILayout.Width(delW))) delete = true;
                     GUILayout.EndHorizontal();
-                    break;
                 }
 
-                GUILayout.EndHorizontal();
+                if (lines > 1) GUILayout.Space(3);
+                if (!delete) continue;
+                model.RemoveAt(i);
+                changed = true;
+                break;
             }
 
-            GUILayout.Label("Click a cell to cycle  -  / On / Half / Off.   - = leave as it was.");
+            GUILayout.Label(UI.Theme.Hint("Click a cell to cycle  -  / On / Half / Off.   - = leave as it was. Rows with every part at - aren't shot. " +
+                                          "Bra or panties at Half / Off take a top or bottom left at - off too, so they show."), UI.Theme.Rich);
+            _includeOriginal.Value = GUILayout.Toggle(_includeOriginal.Value, " Also shoot them as they're dressed now (first, as \"original\")");
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("+ Add shot"))
             {
                 model.Add(new Preset("shot" + (model.Count + 1), NewStates()));
-                changed = true;
+                Store();
+                UI.Gui.Relayout();
             }
-            if (GUILayout.Button("Defaults"))
+            if (GUILayout.Button(new GUIContent("Reset", "Load the default presets (F1 > Axis: Clothes state)")))
             {
-                _model = Parse(DefaultPresets);
+                _model = Parse(AxisDefaults.ClothesPresets.Value);
                 changed = true;
             }
-            _showAllParts = GUILayout.Toggle(_showAllParts, " All parts");
+            if (GUILayout.Button(new GUIContent("Save as default", "Characters you add from now on start with these presets")))
+                AxisDefaults.ClothesPresets.Value = _presets.Value;
+            var all = GUILayout.Toggle(_showAllParts, " All parts");
+            if (all != _showAllParts) { _showAllParts = all; UI.Gui.Relayout(); }
             GUILayout.EndHorizontal();
 
             if (changed) Store();
+        }
+
+        /// <summary>
+        /// A bra or panties set to half or off can't be seen under the top / bottom, so a preset that changes
+        /// them and leaves the top / bottom at "-" takes the top / bottom off as well.
+        /// </summary>
+        private static sbyte[] WithOuterOff(sbyte[] states)
+        {
+            var s = states.ToArray();
+            if ((s[Bra] == 1 || s[Bra] == 2) && s[Top] == Unchanged) s[Top] = 2;
+            if ((s[Panties] == 1 || s[Panties] == 2) && s[Bottom] == Unchanged) s[Bottom] = 2;
+            return s;
         }
 
         private static string StateText(sbyte s) => s == 0 ? "On" : s == 1 ? "Half" : s == 2 ? "Off" : "-";
@@ -250,7 +312,7 @@ namespace HS2CameraSweep.Axes
         private static string Serialize(Preset p)
         {
             var parts = new List<string>();
-            for (var k = 0; k < p.States.Length; k++)
+            foreach (var k in DisplayOrder)
                 if (p.States[k] != Unchanged)
                     parts.Add(PartNames[k] + ":" + StateText(p.States[k]).ToLowerInvariant());
 

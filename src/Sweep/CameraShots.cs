@@ -9,7 +9,7 @@ namespace HS2CameraSweep.Sweep
     /// <summary>One camera position to shoot from.</summary>
     internal abstract class CameraShot
     {
-        /// <summary>Short, filename-safe label, e.g. "slot03" or "cam_Closeup".</summary>
+        /// <summary>Short, filename-safe label, e.g. "cam03" (a saved view) or "cam_Closeup" (a camera object).</summary>
         public abstract string Label { get; }
 
         /// <summary>Point the Studio view at this camera.</summary>
@@ -30,7 +30,7 @@ namespace HS2CameraSweep.Sweep
 
         public int Index => _index;
 
-        public override string Label => $"slot{_index + 1:00}";
+        public override string Label => $"cam{_index + 1:00}";
 
         public override void Apply(Studio.Studio studio)
         {

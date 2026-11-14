@@ -8,13 +8,30 @@ using Studio;
 
 namespace HS2CameraSweep.Sweep
 {
+    /// <summary>One variation's current value for one character, for file names.</summary>
+    internal struct VariationLabel
+    {
+        public VariationLabel(string who, string kind, string label)
+        {
+            Who = who;
+            Kind = kind;
+            Label = label;
+        }
+
+        public string Who;   // character name
+        public string Kind;  // "outfit", "face"...
+        public string Label; // "casual", "smile"...
+    }
+
     /// <summary>
     /// Builds file names (and optional subfolders) from a template such as
     ///   {scene}/{character}_{outfit}_{face}_{camera}
     ///
-    /// Tokens: {prefix} {scene} {camera} {n} {date} {time} {character} {axes}
+    /// Tokens: {prefix} {scene} {camera} {n} {date} {time} {character} {characters} {axes}
     ///         and one per variation: {swap} {outfit} {clothes} {face} {extras}
-    /// A token for a variation that's off is empty, and the separators around it are tidied away.
+    /// With one character, {face} is just "smile". When several characters use the same variation it
+    /// becomes "Aiko-smile_Kenji-grin", and {axes} names each character.
+    /// A token for a variation nobody uses is empty, and the separators around it are tidied away.
     /// "/" starts a subfolder.
     /// </summary>
     internal static class NameTemplate
@@ -22,16 +39,20 @@ namespace HS2CameraSweep.Sweep
         public const string Default = "{prefix}_{axes}_{camera}";
 
         public static readonly string[] Tokens =
-            { "prefix", "scene", "camera", "n", "date", "time", "character", "axes", "swap", "outfit", "clothes", "face", "extras" };
+            { "prefix", "scene", "camera", "n", "date", "time", "character", "characters", "axes", "swap", "outfit", "pose", "clothes", "face", "extras" };
 
         private static readonly Regex TokenRx = new Regex(@"\{([A-Za-z]+)\}", RegexOptions.Compiled);
         private static readonly Regex SeparatorRunRx = new Regex(@"[_\- ]{2,}", RegexOptions.Compiled);
 
-        /// <summary>Token values for one shot. axisLabels = (variation name, value label) for the variations in use.</summary>
+        /// <param name="character">The first character in the sweep (their current name, after any swap).</param>
+        /// <param name="characters">Every character in the sweep.</param>
         public static Dictionary<string, string> Values(string prefix, string camera, int n, int total, DateTime started,
-            string character, IEnumerable<KeyValuePair<string, string>> axisLabels)
+            string character, IEnumerable<string> characters, IEnumerable<VariationLabel> labels)
         {
-            var axes = axisLabels.ToList();
+            var list = labels.Where(l => !string.IsNullOrEmpty(l.Label)).ToList();
+            var several = list.Select(l => l.Who).Distinct().Count() > 1;
+            string Who(VariationLabel l) => FileNames.Sanitize(l.Who);
+
             var digits = Math.Max(3, total.ToString().Length);
             var v = new Dictionary<string, string>
             {
@@ -41,10 +62,19 @@ namespace HS2CameraSweep.Sweep
                 { "n", n.ToString().PadLeft(digits, '0') },
                 { "date", started.ToString("yyyyMMdd") },
                 { "time", started.ToString("HHmmss") },
-                { "character", character ?? "" },
-                { "axes", string.Join("_", axes.Select(kv => kv.Key + "-" + kv.Value).ToArray()) },
+                { "character", FileNames.Sanitize(character ?? "") },
+                { "characters", string.Join("_", characters.Select(FileNames.Sanitize).Where(x => x.Length > 0).ToArray()) },
+                { "axes", string.Join("_", list.Select(l => (several ? Who(l) + "-" : "") + l.Kind + "-" + l.Label).ToArray()) },
             };
-            foreach (var kv in axes) v[kv.Key] = kv.Value;
+
+            foreach (var group in list.GroupBy(l => l.Kind))
+            {
+                var items = group.ToList();
+                v[group.Key] = items.Count == 1
+                    ? items[0].Label
+                    : string.Join("_", items.Select(l => Who(l) + "-" + l.Label).ToArray());
+            }
+
             return v;
         }
 
