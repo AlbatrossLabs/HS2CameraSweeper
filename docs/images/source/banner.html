@@ -1,0 +1,254 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0F1115; --panel: #171A21; --raised: #1E222B; --border: #262A33; --border-hi: #3A3F4A;
+    --text: #E6E8EE; --muted: #8B91A1; --neon: #6EE7B7; --neon-dim: #4B957B; --blue: #58A6FF;
+    --cyan: #4FE3FF; --pink: #FF6FD8; --violet: #7C5CFF;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body { font-family: "Inter", sans-serif; color: var(--text); overflow: hidden; }
+
+  .stage {
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(900px 420px at 18% 30%, rgba(88,166,255,.10), transparent 60%),
+      radial-gradient(700px 380px at 82% 70%, rgba(110,231,183,.08), transparent 60%),
+      linear-gradient(180deg, #10131A 0%, #0B0D11 100%);
+  }
+  /* faint dot grid */
+  .stage::before {
+    content: ""; position: absolute; inset: 0;
+    background-image: radial-gradient(rgba(255,255,255,.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(90deg, rgba(0,0,0,.9), rgba(0,0,0,.3));
+  }
+  /* thin neon frame like the plugin window */
+  .frame-edge {
+    position: absolute; inset: 14px; border-radius: 18px;
+    border: 1.5px solid rgba(110,231,183,.55);
+    box-shadow: 0 0 24px rgba(110,231,183,.12), inset 0 0 24px rgba(110,231,183,.05);
+    pointer-events: none;
+  }
+
+  /* ---------- wordmark (echoes the VN Deck logo: gradient word + framed plate) ---------- */
+  .brand { position: absolute; display: flex; flex-direction: column; }
+  .wordmark { display: flex; align-items: center; gap: 14px; }
+  .camera {
+    font-family: "Inter Display", "Inter", sans-serif; font-weight: 900; letter-spacing: -.02em; line-height: .9;
+    background: linear-gradient(100deg, var(--cyan) 0%, var(--blue) 45%, var(--violet) 75%, var(--pink) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    filter: drop-shadow(0 0 18px rgba(79,227,255,.35)) drop-shadow(0 2px 0 rgba(10,12,30,.9));
+  }
+  .plate {
+    position: relative; display: flex; align-items: center;
+    background: linear-gradient(180deg, #121729, #0C1020);
+    border: 2px solid var(--blue); border-radius: 10px;
+    box-shadow: 0 0 22px rgba(88,166,255,.45), inset 0 0 18px rgba(88,166,255,.18);
+  }
+  .plate::after { /* small tech notch, like the DECK plate */
+    content: ""; position: absolute; right: 10px; top: 8px; width: 10px; height: 10px;
+    border: 2px solid var(--blue); border-radius: 2px; opacity: .8;
+  }
+  .sweep {
+    font-family: "Inter Display", "Inter", sans-serif; font-weight: 800; letter-spacing: .06em; line-height: 1;
+    color: #EAFBF4;
+    text-shadow: 0 0 10px rgba(110,231,183,.85), 0 0 26px rgba(110,231,183,.45);
+  }
+  .underline {
+    height: 4px; border-radius: 4px; margin-top: 10px;
+    background: linear-gradient(90deg, var(--neon), rgba(110,231,183,0));
+    box-shadow: 0 0 12px rgba(110,231,183,.6);
+  }
+  .tagline { color: var(--text); font-weight: 500; letter-spacing: -.005em; }
+  .tagline b { color: var(--neon); font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    font-size: 13px; font-weight: 600; color: var(--blue);
+    padding: 6px 11px; border-radius: 8px;
+    background: var(--panel); border: 1px solid var(--border);
+  }
+  .chip.on { color: var(--neon); border-color: var(--neon); background: #1F3A36; }
+  .by { color: var(--muted); font-size: 13px; font-weight: 500; letter-spacing: .04em; }
+  .by b { color: var(--text); font-weight: 600; }
+
+  /* ---------- contact sheet ---------- */
+  .sheet { position: absolute; display: grid; gap: 12px; }
+  .cam {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--border);
+  }
+  .cam svg { display: block; width: 100%; height: 100%; }
+  .cam .label {
+    position: absolute; left: 8px; bottom: 7px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+    color: var(--text); background: rgba(15,17,21,.75); padding: 2px 7px; border-radius: 5px;
+  }
+  .cam .done {
+    position: absolute; right: 7px; top: 7px; width: 18px; height: 18px; border-radius: 5px;
+    background: var(--neon); display: grid; place-items: center;
+  }
+  .cam.live { border: 2px solid var(--neon); box-shadow: 0 0 18px rgba(110,231,183,.45); }
+  .cam.live .rec {
+    position: absolute; right: 8px; top: 7px; font-size: 10px; font-weight: 800; letter-spacing: .08em;
+    color: #FF8A8A; display: flex; align-items: center; gap: 5px;
+    background: rgba(15,17,21,.75); padding: 2px 6px; border-radius: 5px;
+  }
+  .cam.live .rec::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: #FF5D5D; box-shadow: 0 0 8px #FF5D5D; }
+  .cam.live .scan {
+    position: absolute; top: 0; bottom: 0; width: 38%; left: 46%;
+    background: linear-gradient(90deg, rgba(110,231,183,0), rgba(110,231,183,.22) 85%, rgba(110,231,183,.9) 100%);
+    border-right: 2px solid var(--neon);
+  }
+  .cam.todo { opacity: .55; }
+
+  .progress {
+    position: absolute; display: flex; align-items: center; gap: 12px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px;
+  }
+  .progress .bar { flex: 1; height: 10px; border-radius: 6px; background: #0B0D10; border: 1px solid var(--border); overflow: hidden; }
+  .progress .fill { height: 100%; width: 56%; background: var(--neon); border-radius: 6px; box-shadow: 0 0 10px rgba(110,231,183,.7); }
+  .progress .txt { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+  .progress .txt span { color: var(--muted); font-weight: 500; }
+
+  /* ---------- layouts ---------- */
+  /* README banner 1600 x 400 */
+  .banner { width: 1600px; height: 400px; }
+  .banner .brand { left: 70px; top: 76px; width: 720px; gap: 17px; }
+  .banner .camera { font-size: 96px; }
+  .banner .plate { height: 92px; padding: 0 26px 0 22px; }
+  .banner .sweep { font-size: 66px; }
+  .banner .tagline { font-size: 24px; }
+  .banner .sheet { right: 64px; top: 50px; grid-template-columns: repeat(4, 172px); grid-template-rows: repeat(2, 112px); }
+  .banner .progress { right: 64px; top: 304px; width: 724px; }
+
+  /* Social preview 1280 x 640 */
+  .social { width: 1280px; height: 640px; }
+  .social .brand { left: 72px; top: 70px; width: 1136px; gap: 18px; }
+  .social .camera { font-size: 108px; }
+  .social .plate { height: 102px; padding: 0 28px 0 24px; }
+  .social .sweep { font-size: 74px; }
+  .social .tagline { font-size: 26px; max-width: 1000px; }
+  .social .sheet { left: 72px; top: 352px; grid-template-columns: repeat(6, 1fr); grid-template-rows: 150px; width: 1136px; }
+  .social .progress { left: 72px; top: 520px; width: 1136px; }
+  .social .by { position: absolute; right: 72px; top: 580px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const layout = new URLSearchParams(location.search).get('layout') || 'banner';
+
+// One little studio scene - a grid floor, a pedestal with a glowing orb, a key light - seen from a
+// different angle by each camera. That's the whole idea of the plugin: same scene, every camera.
+function scene(i, w, h) {
+  const angles = [
+    { vx: .50, hy: .42, ox: .50, s: 1.00 }, { vx: .25, hy: .38, ox: .66, s: .85 },
+    { vx: .78, hy: .46, ox: .34, s: .95 },  { vx: .50, hy: .62, ox: .50, s: 1.35 },
+    { vx: .12, hy: .30, ox: .70, s: .70 },  { vx: .90, hy: .34, ox: .28, s: .75 },
+    { vx: .50, hy: .22, ox: .50, s: .60 },  { vx: .62, hy: .52, ox: .42, s: 1.15 },
+  ];
+  const a = angles[i % angles.length];
+  const hy = h * a.hy, vx = w * a.vx;
+  let lines = '';
+  for (let k = -8; k <= 8; k++) {                      // floor lines towards the vanishing point
+    const x = vx + k * w * .22;
+    lines += `<line x1="${vx}" y1="${hy}" x2="${x + (x - vx) * 2}" y2="${h * 1.6}" />`;
+  }
+  for (let k = 1; k <= 7; k++) {                       // receding cross lines
+    const y = hy + (h - hy) * Math.pow(k / 7, 1.9);
+    lines += `<line x1="0" y1="${y}" x2="${w}" y2="${y}" />`;
+  }
+  const ox = w * a.ox, base = hy + (h - hy) * .55, r = 15 * a.s, ph = 26 * a.s, pw = 34 * a.s;
+  const id = `g${layout}${i}`;
+  return `
+  <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <linearGradient id="sky${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#151B2B"/><stop offset="1" stop-color="#0E121B"/>
+      </linearGradient>
+      <radialGradient id="glow${id}" cx=".5" cy=".5" r=".5">
+        <stop offset="0" stop-color="#4FE3FF" stop-opacity=".55"/><stop offset="1" stop-color="#4FE3FF" stop-opacity="0"/>
+      </radialGradient>
+      <radialGradient id="orb${id}" cx=".35" cy=".3" r=".75">
+        <stop offset="0" stop-color="#E9FFFF"/><stop offset=".35" stop-color="#4FE3FF"/><stop offset=".8" stop-color="#7C5CFF"/><stop offset="1" stop-color="#FF6FD8"/>
+      </radialGradient>
+      <linearGradient id="cone${id}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#FFFFFF" stop-opacity=".16"/><stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <rect width="${w}" height="${h}" fill="url(#sky${id})"/>
+    <rect y="${hy}" width="${w}" height="${h - hy}" fill="#0B0E15"/>
+    <g stroke="#58A6FF" stroke-opacity=".22" stroke-width="1">${lines}</g>
+    <polygon points="${ox - 6},0 ${ox + 6},0 ${ox + pw * 1.6},${base} ${ox - pw * 1.6},${base}" fill="url(#cone${id})"/>
+    <ellipse cx="${ox}" cy="${base + 2}" rx="${pw * 1.4}" ry="${pw * .32}" fill="#000" opacity=".45"/>
+    <rect x="${ox - pw / 2}" y="${base - ph}" width="${pw}" height="${ph}" rx="3" fill="#1E222B" stroke="#3A3F4A"/>
+    <ellipse cx="${ox}" cy="${base - ph}" rx="${pw / 2}" ry="${pw * .14}" fill="#262A33" stroke="#3A3F4A"/>
+    <circle cx="${ox}" cy="${base - ph - r}" r="${r * 2.6}" fill="url(#glow${id})"/>
+    <circle cx="${ox}" cy="${base - ph - r}" r="${r}" fill="url(#orb${id})"/>
+    <g stroke="#E6E8EE" stroke-opacity=".55" stroke-width="1.5" fill="none">
+      <path d="M8 18 V8 H18"/><path d="M${w - 18} 8 H${w - 8} V18"/>
+      <path d="M8 ${h - 18} V${h - 8} H18"/><path d="M${w - 18} ${h - 8} H${w - 8} V${h - 18}"/>
+    </g>
+  </svg>`;
+}
+
+const check = `<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2.2 6.3 L4.8 8.8 L9.8 3.4" stroke="#0F1115" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+function sheet(count, live, w, h) {
+  let html = '';
+  for (let i = 0; i < count; i++) {
+    const state = i < live ? 'done' : i === live ? 'live' : 'todo';
+    html += `<div class="cam ${state}">${scene(i, w, h)}
+      ${state === 'live' ? '<div class="scan"></div><div class="rec">REC</div>' : ''}
+      ${state === 'done' ? `<div class="done">${check}</div>` : ''}
+      <div class="label">Cam ${i + 1}</div></div>`;
+  }
+  return html;
+}
+
+const brand = (tag) => `
+  <div class="brand">
+    <div class="wordmark">
+      <div class="camera">CAMERA</div>
+      <div class="plate"><div class="sweep">SWEEP</div></div>
+    </div>
+    <div class="underline" style="width:${layout === 'banner' ? 420 : 520}px"></div>
+    <div class="tagline">${tag}</div>
+    <div class="chips">
+      <div class="chip on">Every camera, one click</div>
+      <div class="chip">Outfits · poses · faces</div>
+      <div class="chip">PNG · WebP · JPG</div>
+      ${layout === 'social' ? '<div class="chip">Transparent backgrounds</div>' : ''}
+      <div class="chip">Video via VideoExport</div>
+    </div>
+    ${layout === 'banner' ? '<div class="by">HONEY SELECT 2 STUDIO PLUGIN · <b>ALBATROSS LABS</b></div>' : ''}
+  </div>`;
+
+const progress = (done, total, cam) => `
+  <div class="progress">
+    <div class="txt">Camera Sweep</div>
+    <div class="bar"><div class="fill" style="width:${Math.round(done / total * 100)}%"></div></div>
+    <div class="txt">${done} / ${total} <span>· ${cam}</span></div>
+  </div>`;
+
+const root = document.getElementById('root');
+if (layout === 'social') {
+  root.innerHTML = `<div class="stage social">
+    ${brand('Shoot every camera in your <b>Honey Select 2 Studio</b> scene in one go, with every outfit, pose and expression you pick.')}
+    <div class="sheet">${sheet(6, 3, 178, 150)}</div>
+    ${progress(3, 6, 'cam04_aiko_smile')}
+    <div class="by">HONEY SELECT 2 STUDIO PLUGIN · <b>ALBATROSS LABS</b></div>
+    <div class="frame-edge"></div></div>`;
+} else {
+  root.innerHTML = `<div class="stage banner">
+    ${brand('Shoot every camera in your <b>HS2 Studio</b> scene in one go.')}
+    <div class="sheet">${sheet(8, 4, 172, 112)}</div>
+    ${progress(4, 8, 'cam05_aiko_smile')}
+    <div class="frame-edge"></div></div>`;
+}
+</script>
+</body>
+</html>

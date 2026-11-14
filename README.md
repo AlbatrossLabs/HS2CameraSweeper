@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/banner.png" alt="Camera Sweep - shoot every camera in your HS2 Studio scene in one go" width="100%"></p>
+
 # Camera Sweep (HS2 Studio)
 
 BepInEx plugin for Honey Select 2 Studio (StudioNEOV2). Set up a scene and cameras, press one key, and get a render of every camera. Add characters and choose what changes for each one (outfits, clothing states, expressions, face extras, swapping in other characters), and every camera is shot for every combination.
@@ -149,14 +151,21 @@ Install = `HS2CameraSweep.dll`, `libwebp_cs.dll` and `LICENSE-libwebp.txt` in `B
 
 ## Release
 
-`release.bat` packages a release:
+Run `release.bat` (it calls `scripts/release.ps1`). It works like VN Deck's: nothing goes public until you press *Publish* on GitHub.
 
-1. Reads the version from `src/CameraSweepPlugin.cs`.
-2. Builds with `dotnet build -c Release` (without copying into the game). If the .NET SDK isn't installed, or you run `release.bat nobuild`, it packages the DLL installed in `X:\HS2 RX15` instead, which is the one you tested.
-3. Writes `releases\HS2CameraSweep-vX.Y.Z.zip`, laid out to extract straight into the HS2 folder: `BepInEx\plugins\HS2CameraSweep\` (plugin, libwebp, its licence files) plus `HS2CameraSweep-README.txt` (from `packaging/README.txt`) and `HS2CameraSweep-CHANGELOG.txt` (from `CHANGELOG.md`).
-4. Offers to commit and push the zip if `git` is on PATH (otherwise use GitHub Desktop), then to create the GitHub release `vX.Y.Z` with the zip attached and that version's `CHANGELOG.md` section as notes, if the GitHub CLI (`gh`) is installed.
+1. Asks for the version (Enter keeps the one in `src/CameraSweepPlugin.cs`; a new one is written there and in the csproj).
+2. Stops if that version is already published on GitHub.
+3. Opens `release-notes.md` in Notepad. Check it, save, close. Empty headings are left out; it stops if there are no entries.
+4. Builds with `dotnet build -c Release` (without copying into the game). Without the .NET SDK, or with `release.bat -NoBuild`, it packages the DLL installed in `X:\HS2 RX15`, after checking that it's the version being released.
+5. Zips into `releases\HS2CameraSweep-vX.Y.Z.zip` (ignored by git). Extracting it into the HS2 folder puts everything in `BepInEx\plugins\HS2CameraSweep\`: the DLL, `libwebp_cs.dll`, libwebp's licence files, `README.txt` (from `packaging/README.txt`) and `CHANGES.txt` (this version's notes).
+6. Uploads a **draft** release `vX.Y.Z` to AlbatrossLabs/HS2CameraSweeper with the notes, install line, the zip and its SHA-256, then opens the Releases page.
+7. Saves the notes to `docs/releases/X.Y.Z.md` and `CHANGELOG.md`, and empties `release-notes.md` for the next version.
 
-Before a release: bump `Version` in `src/CameraSweepPlugin.cs` and add a `## vX.Y.Z` section to `CHANGELOG.md`.
+Then commit and push in GitHub Desktop (version bump, changelog, notes), and press *Publish release*: GitHub makes the tag from `main` at that moment.
+
+One-time setup: a fine-grained token at <https://github.com/settings/personal-access-tokens/new> (resource owner AlbatrossLabs, only HS2CameraSweeper, *Contents: Read and write*), then `setx GH_CameraSweep "github_pat_..."` and open a new window.
+
+Release notes are written as the code changes: one line per change under ADD, CHANGE, REMOVE or FIX in `release-notes.md`.
 
 ## Dev tips
 

@@ -13,10 +13,12 @@ REQUIREMENTS
 
 INSTALL
   1. Close the game.
-  2. Extract this zip into your Honey Select 2 folder (the one with HoneySelect2.exe).
-     It adds BepInEx\plugins\HS2CameraSweep\ with:
+  2. Extract the zip into your Honey Select 2 folder (the one with HoneySelect2.exe).
+     Everything lands in BepInEx\plugins\HS2CameraSweep\ :
        HS2CameraSweep.dll    the plugin
        libwebp_cs.dll        WebP encoder (libwebp 1.4.0)
+       README.txt            this file
+       CHANGES.txt           what's new in this version
        LICENSE-libwebp.txt / PATENTS-libwebp.txt
   3. Updating: overwrite the old files.
 
@@ -28,6 +30,7 @@ USE
 
   Settings: F1 (Configuration Manager) > Camera Sweep.
   Log: output_log.txt in the game folder.
+  Full history: CHANGELOG.md on GitHub.
 
 LICENSES
   Camera Sweep: see the GitHub repository.
