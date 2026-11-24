@@ -18,7 +18,7 @@ Set-Location (Split-Path -Parent $PSScriptRoot)
 
 $Repo      = 'AlbatrossLabs/HS2CameraSweeper'
 $HS2Dir    = 'X:\HS2 RX15'
-$Installed = Join-Path $HS2Dir 'BepInEx\plugins\HS2CameraSweep\HS2CameraSweep.dll'
+$Installed = Join-Path $HS2Dir 'BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\HS2CameraSweep.dll'
 $PluginCs  = 'src\CameraSweepPlugin.cs'
 $Csproj    = 'HS2CameraSweep.csproj'
 $NotesFile = 'release-notes.md'

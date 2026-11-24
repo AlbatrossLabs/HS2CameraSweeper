@@ -8,11 +8,11 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <DebugType>embedded</DebugType>
-    <Version>0.9.6</Version>
+    <Version>0.9.7</Version>
 
     <!--
       Optional: point this at your HS2 install and the built DLL is copied into
-      BepInEx\plugins\HS2CameraSweep\ after every build.
+      BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\ after every build.
         dotnet build -c Release -p:HS2Dir="D:\Games\HoneySelect2"
       Or set it once here.
     -->
@@ -33,10 +33,18 @@
   </ItemGroup>
 
   <Target Name="DeployToHS2" AfterTargets="Build" Condition="'$(HS2Dir)' != ''">
-    <MakeDir Directories="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
-    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
-    <Copy SourceFiles="native\libwebp_cs.dll;native\LICENSE-libwebp.txt" DestinationFolder="$(HS2Dir)\BepInEx\plugins\HS2CameraSweep" SkipUnchangedFiles="true" />
-    <Message Importance="high" Text="Deployed $(AssemblyName).dll to $(HS2Dir)\BepInEx\plugins\HS2CameraSweep" />
+    <MakeDir Directories="$(HS2Dir)\BepInEx\plugins\AlbatrossLabs\HS2CameraSweep" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(HS2Dir)\BepInEx\plugins\AlbatrossLabs\HS2CameraSweep" />
+    <Copy SourceFiles="native\libwebp_cs.dll;native\LICENSE-libwebp.txt" DestinationFolder="$(HS2Dir)\BepInEx\plugins\AlbatrossLabs\HS2CameraSweep" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Deployed $(AssemblyName).dll to $(HS2Dir)\BepInEx\plugins\AlbatrossLabs\HS2CameraSweep" />
   </Target>
 
+
+  <!-- Every Release build also keeps a copy of itself in bin\Releasev<version>\ (git-ignored): a local history of builds. -->
+  <Target Name="CopyToReleaseFolder" AfterTargets="Build" Condition="'$(Configuration)' == 'Release'">
+    <MakeDir Directories="$(MSBuildThisFileDirectory)bin\Releasev$(Version)" />
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(MSBuildThisFileDirectory)bin\Releasev$(Version)" />
+    <Copy SourceFiles="native\libwebp_cs.dll;native\LICENSE-libwebp.txt" DestinationFolder="$(MSBuildThisFileDirectory)bin\Releasev$(Version)" SkipUnchangedFiles="true" />
+    <Message Importance="high" Text="Copied $(TargetFileName) to bin\Releasev$(Version)" />
+  </Target>
 </Project>

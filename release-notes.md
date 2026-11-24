@@ -6,6 +6,7 @@ docs\releases\<version>.md, adds it to CHANGELOG.md and empties this file for th
 -->
 
 ### ADD
+- Each camera's Graphics preset: with Studio Theme 0.16.8 or later and the Graphics plugin, each camera or numbered view is shot with its Graphics preset (cameras without one get Graphics' default look), so one sweep can cover a day camera and a night camera. Your Graphics settings from before the sweep come back afterwards. On by default; the switch is under the window's capture settings.
 
 ### CHANGE
 

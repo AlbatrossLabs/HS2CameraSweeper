@@ -606,6 +606,9 @@ namespace HS2CameraSweep.UI
             _plugin.PauseMotion.Value = GUILayout.Toggle(_plugin.PauseMotion.Value,
                 new GUIContent(" Pause blinking and breathing while shooting", "Every character, put back when the sweep ends. Breathing needs AdvIK."));
 
+            _plugin.CameraPresets.Value = GUILayout.Toggle(_plugin.CameraPresets.Value,
+                new GUIContent(" Use each camera's Graphics preset", "Set per camera in Studio Theme's camera menu (needs Studio Theme and Graphics). The look from before comes back after the sweep."));
+
             GUILayout.BeginHorizontal();
             GUILayout.Label(new GUIContent("Settle", "Frames to wait after switching camera before capturing. Raise if shots catch the camera mid-move."), GUILayout.Width(LabelW));
             _plugin.SettleFrames.Value = Mathf.Clamp(IntField(_plugin.SettleFrames.Value, 36), 0, 120);

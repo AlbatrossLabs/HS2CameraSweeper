@@ -143,6 +143,8 @@ namespace HS2CameraSweep.Sweep
                 : $"Camera Sweep: {Total} shot(s) - {shots.Count} camera(s) x {combos} variation(s).");
 
             if (!video) _writer.BeginBatch();
+            // Studio Theme's per-camera Graphics presets: each shot loads its camera's (the look comes back after).
+            var presets = _plugin.CameraPresets.Value ? ThemePresets.Begin() : null;
             try
             {
                 // Odometer over axis value indexes. Only axes whose index changed get re-applied,
@@ -176,6 +178,14 @@ namespace HS2CameraSweep.Sweep
                         shot.Apply(studio);
                         // No blinking or breathing in stills (re-checked each shot: a swap loads new settings).
                         if (!video && _plugin.PauseMotion.Value) _pause.Apply();
+
+                        // A new Graphics preset (sky, lights, reflections) gets a moment to finish loading.
+                        if (presets != null && ThemePresets.ApplyFor(shot))
+                        {
+                            var until = Time.realtimeSinceStartup + 0.3f;
+                            for (var f = 0; f < 5 || Time.realtimeSinceStartup < until; f++)
+                                yield return null;
+                        }
 
                         for (var f = 0; f < _plugin.SettleFrames.Value; f++)
                             yield return null;
@@ -244,6 +254,7 @@ namespace HS2CameraSweep.Sweep
                 _pause.Restore();
 
                 RestoreView(studio, originalView, originalCamera);
+                ThemePresets.End(presets);
 
                 CameraSweepPlugin.Logger.LogMessage(_cancelRequested
                     ? $"Camera Sweep cancelled after {Done} of {Total} shots. Saved to {runFolder}"

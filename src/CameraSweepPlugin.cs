@@ -48,7 +48,7 @@ namespace HS2CameraSweep
     {
         public const string Guid = "com.albatrosslabs.hs2.camerasweep";
         public const string PluginName = "Camera Sweep";
-        public const string Version = "0.9.6";
+        public const string Version = "0.9.7";
 
         internal static new ManualLogSource Logger;
         internal static CameraSweepPlugin Instance;
@@ -62,6 +62,7 @@ namespace HS2CameraSweep
         internal ConfigEntry<int> SettleFrames;
         internal ConfigEntry<bool> CoverScreen;
         internal ConfigEntry<bool> PauseMotion;
+        internal ConfigEntry<bool> CameraPresets;
 
         // Output
         internal ConfigEntry<string> OutputFolder;
@@ -127,6 +128,9 @@ namespace HS2CameraSweep
             PauseMotion = Config.Bind("General", "Pause blinking and breathing for stills", true,
                 "Turn blinking and breathing (AdvIK) off on every character while still images are shot, and back on afterwards, " +
                 "so no shot catches half-closed eyes or a chest mid-breath. Not used for video.");
+            CameraPresets = Config.Bind("General", "Use camera Graphics presets", true,
+                "With Studio Theme and the Graphics plugin: a camera or numbered view given a Graphics preset (camera menu, " +
+                "or right-click a view number) is shot with that preset. The look from before the sweep comes back afterwards.");
             OutputFolder = Config.Bind("Output", "Folder", "UserData/cap/CameraSweep",
                 "Absolute path, or relative to the game folder. Each run gets its own timestamped subfolder.");
             FilePrefix = Config.Bind("Output", "File prefix", "",
