@@ -106,7 +106,7 @@ Variations belong to a character. Add a character in section 2, then tick what s
 | Expressions | Eyebrow, eye and mouth presets | `<` `>` step through the game's own face patterns for the character's sex and wrap around (past the last goes back to the first). **Set** copies the face the character has right now into that row. Defaults: *neutral* (0/0/0), *smile* (1/1/1), *ahegao* (11/11/17). Rows left all `-` aren't shot. Mouth patterns go through Studio's own setter, which switches the mouth-shape sliders off for the open/tongue patterns like the Face panel does |
 | Face extras | Blush, tears, where the eyes and head look, eye opening, mouth opening | `<` `>` steppers, two lines per preset. Blush, tears and opening go 0 to 1 in 0.25 steps; eye/head look are the position in Studio's list. *+ From current* copies the character |
 
-**Picking files** (swap, outfits, poses): press **+ Pick in Studio's list**. A banner appears at the top of the screen, and until you press **Done** (or Esc), the Load / Change button of Studio's own list adds the selected file to Camera Sweep instead of loading it. Pick as many as you like. **Add all in this list** takes everything the list you last clicked in is showing (with Browser Folders, the current folder). Nothing has to be moved or reorganised, and anything that improves those lists (Browser Folders, Studio Character Sort, search plugins) works here too. Where to look:
+**Picking files** (swap, outfits, poses): press **+ Pick in Studio's list**. Studio's character list, the character's Costume tab or the Pose list opens, a banner appears at the bottom of the screen, and until you press **Done** (or Esc), the Load / Change button of Studio's own list adds the selected file to Camera Sweep instead of loading it. With **Studio Browser** 0.23 or later, its Character, Outfit and Pose browsers pick too (they open the way you've set them to open with Studio's lists): double-click, Enter or **Add to Camera Sweep** adds the selected cards, and **Add all shown** adds everything the browser shows with your folder, search and tag filters. Pick as many as you like. **Add all in this list** takes everything the list you last clicked in is showing (with Browser Folders, the current folder). Nothing has to be moved or reorganised, and anything that improves those lists (Browser Folders, Studio Character Sort, search plugins) works here too. Where to look:
 - character cards: *Add > Character > Female / Male* (the banner tells you which);
 - outfits: the character's *Anim > Costume* list (Camera Sweep selects the character for you);
 - poses: the *Pose* list (Camera Sweep opens it for the character).
@@ -144,11 +144,11 @@ v0.9.2 is built against the updated install: BepInEx 5.4.23.5, Modding API (HS2A
 dotnet build -c Release
 ```
 
-Output: `bin\Release\HS2CameraSweep.dll`. The project's `HS2Dir` is set to `X:\HS2 RX15`, so every build also copies the DLL to `X:\HS2 RX15\BepInEx\plugins\HS2CameraSweep\`. Point it elsewhere with `-p:HS2Dir="D:\Other\HS2"`, or `-p:HS2Dir=` to skip the copy.
+Output: `bin\Release\HS2CameraSweep.dll`. The project's `HS2Dir` is set to `X:\HS2 RX15`, so every build also copies the DLL to `X:\HS2 RX15\BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\`, and a Release build keeps a copy in `bin\Releasev<version>\`. Point it elsewhere with `-p:HS2Dir="D:\Other\HS2"`, or `-p:HS2Dir=` to skip the copy.
 
 Requires HS2API (KKAPI for HS2) in the game, which BetterRepack includes. Screencap is optional.
 
-Install = `HS2CameraSweep.dll`, `libwebp_cs.dll` and `LICENSE-libwebp.txt` in `BepInEx\plugins\HS2CameraSweep\`.
+Install = `HS2CameraSweep.dll`, `libwebp_cs.dll` and `LICENSE-libwebp.txt` in `BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\` (0.9.6 and earlier used `BepInEx\plugins\HS2CameraSweep\`; delete that folder when updating).
 
 ## Release
 
@@ -158,7 +158,7 @@ Run `release.bat` (it calls `scripts/release.ps1`). It works like VN Deck's: not
 2. Stops if that version is already published on GitHub.
 3. Opens `release-notes.md` in Notepad. Check it, save, close. Empty headings are left out; it stops if there are no entries.
 4. Builds with `dotnet build -c Release` (without copying into the game). Without the .NET SDK, or with `release.bat -NoBuild`, it packages the DLL installed in `X:\HS2 RX15`, after checking that it's the version being released.
-5. Zips into `releases\HS2CameraSweep-vX.Y.Z.zip` (ignored by git). Extracting it into the HS2 folder puts everything in `BepInEx\plugins\HS2CameraSweep\`: the DLL, `libwebp_cs.dll`, libwebp's licence files, `README.txt` (from `packaging/README.txt`) and `CHANGES.txt` (this version's notes).
+5. Zips into `releases\HS2CameraSweep-vX.Y.Z.zip` (ignored by git). Extracting it into the HS2 folder puts everything in `BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\`: the DLL, `libwebp_cs.dll`, libwebp's licence files, `README.txt` (from `packaging/README.txt`) and `CHANGES.txt` (this version's notes).
 6. Uploads a **draft** release `vX.Y.Z` to AlbatrossLabs/HS2CameraSweeper with the notes, install line, the zip and its SHA-256, then opens the Releases page.
 7. Saves the notes to `docs/releases/X.Y.Z.md` and `CHANGELOG.md`, and empties `release-notes.md` for the next version.
 

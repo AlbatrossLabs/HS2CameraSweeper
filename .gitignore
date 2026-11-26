@@ -5,3 +5,6 @@ obj/
 
 # Release zips are uploaded to GitHub Releases by release.bat, not committed.
 releases/
+
+# /brag launch-video output
+brag-output*/

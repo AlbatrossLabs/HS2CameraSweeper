@@ -17,9 +17,15 @@ namespace HS2CameraSweep.UI
     /// Sweep list being filled instead of loading it. Whatever improves those lists (Browser Folders,
     /// Studio Character Sort, search plugins) works here too, since the lists themselves are untouched.
     /// "Add all in this list" takes everything the last-used list is showing (e.g. the current folder).
+    ///
+    /// Other plugins can pick for Camera Sweep too: the public members below are a small API, read by
+    /// reflection (Studio Browser's Character, Outfit and Pose browsers use it, so a double-click there adds
+    /// the card instead of loading it). Kind matches Studio Browser's browser ids.
     /// </summary>
-    internal static class PickMode
+    public static class PickMode
     {
+        /// <summary>Bumped when the members below change in a way callers must know about.</summary>
+        public const int ApiVersion = 1;
         private static CardList _list;
         private static int _added;
         private static Func<IEnumerable<string>> _lastListFiles; // files shown by the list last clicked
@@ -27,9 +33,52 @@ namespace HS2CameraSweep.UI
 
         public static bool Active => _list != null;
 
-        public static bool IsPickingFor(CardList list) => _list == list;
+        /// <summary>What's being picked: "characters", "outfits" or "poses"; null when not picking.</summary>
+        public static string Kind
+        {
+            get
+            {
+                if (_list == null) return null;
+                switch (_list.Kind)
+                {
+                    case PickKind.Character: return "characters";
+                    case PickKind.Outfit: return "outfits";
+                    default: return "poses";
+                }
+            }
+        }
 
-        public static void Start(CardList list)
+        /// <summary>Sex the picked cards must be for (0 male, 1 female); -1 when it doesn't matter (poses).</summary>
+        public static int Sex => _list == null || _list.Kind == PickKind.Pose ? -1 : SweepSelection.IsFemale(_list.Character) ? 1 : 0;
+
+        /// <summary>Name of the character the list belongs to.</summary>
+        public static string Target => _list?.Character != null ? SweepRunner.CharName(_list.Character) : "";
+
+        /// <summary>How many files the list holds now.</summary>
+        public static int Count => _list?.Count ?? 0;
+
+        /// <summary>True if the file is in the list already.</summary>
+        public static bool Contains(string path) =>
+            _list != null && !string.IsNullOrEmpty(path) && _list.Files().Any(f => SamePath(f, path));
+
+        /// <summary>Adds files to the list being picked for; returns how many were new. Logs a message like Studio's lists do.</summary>
+        public static int Add(string[] paths)
+        {
+            if (_list == null || paths == null) return 0;
+            var before = _added;
+            Accept(paths, paths.Length > 1);
+            return _added - before;
+        }
+
+        private static bool SamePath(string a, string b)
+        {
+            try { return string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase); }
+            catch { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
+        }
+
+        internal static bool IsPickingFor(CardList list) => _list == list;
+
+        internal static void Start(CardList list)
         {
             _list = list;
             _added = 0;
@@ -68,16 +117,23 @@ namespace HS2CameraSweep.UI
 
             var who = _list.Character != null ? SweepRunner.CharName(_list.Character) : "";
             string how;
+            var browser = BrowserFor(_list.Kind);
             switch (_list.Kind)
             {
                 case PickKind.Character:
-                    how = $"In the {(SweepSelection.IsFemale(_list.Character) ? "Female" : "Male")} character list, select a card and press Load or Change.";
+                    how = browser != null
+                        ? $"Double-click cards in the {browser} (or select a card in the {(SweepSelection.IsFemale(_list.Character) ? "Female" : "Male")} list and press Load)."
+                        : $"In the {(SweepSelection.IsFemale(_list.Character) ? "Female" : "Male")} character list, select a card and press Load or Change.";
                     break;
                 case PickKind.Outfit:
-                    how = $"In {who}'s Costume list, select an outfit and press Load.";
+                    how = browser != null
+                        ? $"Double-click outfits in the {browser} (or select one in {who}'s Costume list and press Load)."
+                        : $"In {who}'s Costume list, select an outfit and press Load.";
                     break;
                 default:
-                    how = "In the Pose list, select a pose and press Load.";
+                    how = browser != null
+                        ? $"Double-click poses in the {browser} (or select one in the Pose list and press Load)."
+                        : "In the Pose list, select a pose and press Load.";
                     break;
             }
 
@@ -99,6 +155,27 @@ namespace HS2CameraSweep.UI
             GUILayout.EndHorizontal();
             GUILayout.EndArea();
         }
+
+        /// <summary>Studio Browser's browser for this kind, if it's installed and can pick for Camera Sweep.</summary>
+        private static string BrowserFor(PickKind kind)
+        {
+            if (!_browserLooked)
+            {
+                _browserLooked = true;
+                // Studio Browser builds that pick for Camera Sweep have CameraSweepBridge.PickingFor.
+                var bridge = AccessTools.TypeByName("HS2StudioBrowser.Game.CameraSweepBridge");
+                _browserCanPick = bridge != null && AccessTools.Method(bridge, "PickingFor") != null;
+            }
+            if (!_browserCanPick) return null;
+            switch (kind)
+            {
+                case PickKind.Character: return AccessTools.TypeByName("HS2StudioBrowser.Characters.CharacterKind") != null ? "Character Browser" : null;
+                case PickKind.Outfit: return AccessTools.TypeByName("HS2StudioBrowser.Outfits.OutfitKind") != null ? "Outfit Browser" : null;
+                default: return AccessTools.TypeByName("HS2StudioBrowser.Poses.PoseKind") != null ? "Pose Browser" : null;
+            }
+        }
+
+        private static bool _browserLooked, _browserCanPick;
 
         private static IEnumerable<string> SafeFiles()
         {

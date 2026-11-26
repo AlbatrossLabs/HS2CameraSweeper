@@ -48,7 +48,7 @@ namespace HS2CameraSweep
     {
         public const string Guid = "com.albatrosslabs.hs2.camerasweep";
         public const string PluginName = "Camera Sweep";
-        public const string Version = "0.9.7";
+        public const string Version = "1.0.0";
 
         internal static new ManualLogSource Logger;
         internal static CameraSweepPlugin Instance;

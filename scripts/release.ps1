@@ -188,7 +188,7 @@ $crlf = { param($s) ($s -replace "`r`n", "`n") -replace "`n", "`r`n" }
 
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$dir = 'BepInEx/plugins/HS2CameraSweep/'
+$dir = 'BepInEx/plugins/AlbatrossLabs/HS2CameraSweep/'
 $archive = [IO.Compression.ZipFile]::Open($zip, 'Create')
 try {
     $level = [IO.Compression.CompressionLevel]::Optimal
@@ -209,7 +209,8 @@ Say " SHA-256: $sha"
 
 # ---- draft release -----------------------------------------------------------------------------------------
 $body = $notes + "`n`n### Install`nExtract the zip into your Honey Select 2 folder (the one with HoneySelect2.exe). " +
-        "Everything goes to ``BepInEx\plugins\HS2CameraSweep\``, with README.txt next to the DLL.`n`n" +
+        "Everything goes to ``BepInEx\plugins\AlbatrossLabs\HS2CameraSweep\``, with README.txt next to the DLL. " +
+        "Updating from 0.9.6 or earlier: delete the old ``BepInEx\plugins\HS2CameraSweep\`` folder.`n`n" +
         "### SHA-256`n| File | SHA-256 |`n| --- | --- |`n| ``$zipName`` | ``$sha`` |`n"
 $title = "Camera Sweep v$ver"
 
